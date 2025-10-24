@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations;
 
-public partial class InitialModel : Migration
+public partial class InitialModel : EntityFrameworkCore.Migrations.Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {

@@ -41,12 +41,6 @@ builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =
 // Register OrderService
 builder.Services.AddScoped<IOrderService, OrderService>();
 
-//BasketClient
-builder.Services.AddHttpClient<IBasketClient, BasketClient>(client =>
-{
-    client.BaseAddress = new Uri("http://localhost:5004");
-});
-
 builder.Services.AddScoped<IBasketClient, BasketClient>();
 
 builder.Services.AddMediatR(cfg =>

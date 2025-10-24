@@ -4,7 +4,7 @@
 
 namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations
 {
-    public partial class FixShipToAddress : Migration
+    public partial class FixShipToAddress : EntityFrameworkCore.Migrations.Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

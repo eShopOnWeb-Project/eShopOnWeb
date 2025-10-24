@@ -30,7 +30,9 @@
     ports:
       - "5004:5004"
     networks:
-      - eshop-on-web-net
+      eshop-on-web-net:
+        aliases:
+          - basket-api
 
 networks:
   eshop-on-web-net:
