@@ -22,6 +22,10 @@ public class CatalogItem
     [Required(ErrorMessage = "The Description field is required")]
     public string Description { get; set; }
 
+    public int Total { get; set; }
+
+    public int Reserved { get; set; }
+
     // decimal(18,2)
     [RegularExpression(@"^\d+(\.\d{0,2})*$", ErrorMessage = "The field Price must be a positive number with maximum two decimals.")]
     [Range(0.01, 1000)]
