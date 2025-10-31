@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using BlazorShared.Models;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Subscribers;
 using static IRabbitMqService;
@@ -7,13 +8,13 @@ namespace Microsoft.eShopWeb.Web.Hubs;
 
 public class StockHub : Hub
 {
-    private readonly RabbitMqService _rabbitMqService;
-    private readonly StockSubscriber _subscriber;
+    private readonly IRabbitMqService _rabbitMqService;
+    private readonly StockCache _cache;
 
-    public StockHub(RabbitMqService rabbitMqService, StockSubscriber subscriber)
+    public StockHub(IRabbitMqService rabbitMqService, StockCache stockCache)
     {
         _rabbitMqService = rabbitMqService;
-        _subscriber = subscriber;
+        _cache = stockCache;
     }
 
     public async Task Restock(int itemId, int amount)
@@ -21,14 +22,8 @@ public class StockHub : Hub
         await _rabbitMqService.SendRestockAsync(new List<Item> { new() { itemId=itemId, amount=amount } });
     }
 
-    public async Task<List<StockItem>> GetStockAsync()
+    public async Task<List<StockItem>> GetStockCacheAsync()
     {
-        var items = await _rabbitMqService.GetFullStockAsync();
-
-        // Update the in-memory cache
-        foreach (var item in items)
-            _subscriber.UpdateCache(item);
-
-        return items;
+        return _cache.GetAll().ToList();
     }
 }

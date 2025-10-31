@@ -28,8 +28,6 @@ public static class ServicesConfiguration
         services.AddScoped<CatalogItemService>();
         services.AddScoped<ICatalogItemService, CachedCatalogItemServiceDecorator>();
 
-        services.AddScoped<StockHubService>();
-
         return services;
     }
 }

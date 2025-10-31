@@ -1,39 +1,46 @@
-﻿namespace Microsoft.eShopWeb.Web.Cache;
+﻿using System.Collections.Concurrent;
+using System.Text.Json.Serialization;
+using BlazorShared.Models;
+
+namespace Microsoft.eShopWeb.Web.Cache;
 
 public class StockCache
 {
-    private readonly Dictionary<int, StockItem> _stocks = new();
-    private readonly object _lock = new();
+    private readonly ConcurrentDictionary<int, StockItem> _stocks = new();
+    private readonly IRabbitMqService _rabbitMqService;
+    public StockCache(IRabbitMqService rabbitMqService)
+    {
+        _rabbitMqService = rabbitMqService;
+    }
+
+    public async Task Initialize()
+    {
+        var items = await _rabbitMqService.GetFullStockAsync();
+
+        foreach (var item in items)
+            Update(item);
+    }
 
     public void Update(int itemId, int total, int reserved)
     {
-        lock (_lock)
-        {
-            _stocks[itemId] = new StockItem { ItemId = itemId, Total = total, Reserved = reserved };
-        }
+        _stocks[itemId] = new StockItem (itemId, total, reserved);
+    }
+
+    public void Update(StockItem stockItem)
+    {
+        _stocks[stockItem.ItemId] = stockItem;
     }
 
     public StockItem? Get(int itemId)
     {
-        lock (_lock)
-        {
-            _stocks.TryGetValue(itemId, out var stock);
-            return stock;
-        }
+        _stocks.TryGetValue(itemId, out var stock);
+        return stock;
     }
 
     public IReadOnlyCollection<StockItem> GetAll()
     {
-        lock (_lock)
-        {
-            return _stocks.Values.ToList().AsReadOnly();
-        }
+        return _stocks.Values.ToArray();
     }
 }
 
-public class StockItem
-{
-    public int ItemId { get; set; }
-    public int Total { get; set; }
-    public int Reserved { get; set; }
-}
+

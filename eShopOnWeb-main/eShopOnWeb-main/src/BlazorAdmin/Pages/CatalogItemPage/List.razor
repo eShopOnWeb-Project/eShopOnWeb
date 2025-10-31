@@ -53,7 +53,7 @@ else
                     <td>@(item.Total - item.Reserved)</td>
                     <td>
                         <input type="number" min="1" @bind="restockAmounts[item.Id]" style="width:70px" />
-                        <button class="btn btn-success" @onclick="() => RestockClick(item.Id)">Restock</button>
+                        <button class="btn btn-success" @onclick="() => RestockClick(item.Id)" @onclick:stopPropagation="true">Restock</button>
                     </td>
                     <td>@item.Description</td>
                     <td>@item.Price</td>

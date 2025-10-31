@@ -12,6 +12,7 @@ services:
       dockerfile: src/Web/Dockerfile
     depends_on:
       - sqlserver
+      - storage_rabbitmq
     networks:
       - eshop-on-web-net
     environment:

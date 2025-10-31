@@ -7,6 +7,12 @@ export interface Item {
   amount: number;
 }
 
+export interface StockItem {
+  itemId: number;
+  total: number;
+  reserved: number;
+}
+
 @Injectable()
 export class CatalogItemStockConsumer {
   constructor(private readonly stockService: CatalogItemStockService) {}
@@ -31,8 +37,14 @@ export class CatalogItemStockConsumer {
     routingKey: 'catalog_item_stock.getall',
     queue: 'catalog_item_stock_getall_queue',
   })
-  public async handleGetAll(msg: any): Promise<Item[]> {
-    return this.stockService.getFullStock();
+  async handleGetAll(msg: any): Promise<StockItem[]> {
+    console.log('Get All Stock RPC request received');
+    try {
+      return await this.stockService.getFullStock();
+    } catch (err: any) {
+      console.error(`Get All Stock RPC request failed: ${err.message}`);
+      return [];
+    }
   }
 
   @RabbitRPC({

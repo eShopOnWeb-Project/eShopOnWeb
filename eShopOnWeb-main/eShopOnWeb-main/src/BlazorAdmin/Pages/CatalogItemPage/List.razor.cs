@@ -6,6 +6,7 @@ using BlazorAdmin.Helpers;
 using BlazorAdmin.Interfaces;
 using BlazorAdmin.Models;
 using BlazorAdmin.Services;
+using BlazorShared.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -18,8 +19,9 @@ public partial class List : BlazorComponent
     [Inject] public ICatalogBrandService CatalogBrandService { get; set; }
     [Inject] public ICatalogTypeService CatalogTypeService { get; set; }
     [Inject] public NavigationManager NavigationManager { get; set; }
-    [Inject] public StockHubService StockHub { get; set; }
 
+
+    private HubConnection? hubConnection;
     private List<CatalogItem> catalogItems = new();
     private List<CatalogType> catalogTypes = new();
     private List<CatalogBrand> catalogBrands = new();
@@ -33,8 +35,22 @@ public partial class List : BlazorComponent
 
     protected override async Task OnInitializedAsync()
     {
-        StockHub.OnStockUpdated(item => Console.WriteLine($"Updated {item.ItemId}: {item.Total}"));
-        await StockHub.StartAsync();
+        hubConnection = new HubConnectionBuilder()
+               .WithUrl(NavigationManager.ToAbsoluteUri("/stockhub"))
+               .Build();
+
+        hubConnection.On<StockItem>("StockUpdated", item =>
+        {
+            var existing = catalogItems.Find(ci => ci.Id == item.ItemId);
+            if (existing != null)
+            {
+                existing.Total = item.Total;
+                existing.Reserved = item.Reserved;
+                InvokeAsync(StateHasChanged);
+            }
+        });
+
+        await hubConnection.StartAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -49,78 +65,61 @@ public partial class List : BlazorComponent
             foreach (var item in catalogItems)
                 restockAmounts[item.Id] = 1;
 
-            //StockHub.OnStockUpdated(UpdateStock);
-            //await StockHub.StartAsync();
-
-            //// Setup event listeners
-            //hubConnection.On<StockItem>("StockUpdated", item =>
-            //{
-            //    var existing = catalogItems.Find(ci => ci.Id == item.ItemId);
-            //    if (existing != null)
-            //    {
-            //        existing.Total = item.Total;
-            //        existing.Reserved = item.Reserved;
-            //        InvokeAsync(StateHasChanged);
-            //    }
-            //});
-
-            //await hubConnection.StartAsync();
-
-            //// Get initial stock from hub
-            //if (HubConnection != null)
-            //{
-            //    try
-            //    {
-            //        var fullStock = await HubConnection.InvokeAsync<List<StockItem>>("GetStockAsync");
-            //        if (fullStock != null)
-            //        {
-            //            foreach (var stock in fullStock)
-            //            {
-            //                var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.ItemId);
-            //                if (existing != null)
-            //                {
-            //                    existing.Total = stock.Total;
-            //                    existing.Reserved = stock.Reserved;
-            //                }
-            //            }
-            //            StateHasChanged();
-            //        }
-            //    }
-            //    catch (Exception ex)
-            //    {
-            //        Console.WriteLine($"Error fetching initial stock: {ex.Message}");
-            //    }
-            //}
+            if (hubConnection != null)
+            {
+                try
+                {
+                    var fullStock = await hubConnection.InvokeAsync<List<StockItem>>("GetStockCacheAsync");
+                    if (fullStock != null)
+                    {
+                        foreach (var stock in fullStock)
+                        {
+                            var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.ItemId);
+                            if (existing != null)
+                            {
+                                existing.Total = stock.Total;
+                                existing.Reserved = stock.Reserved;
+                            }
+                        }
+                        StateHasChanged();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error fetching initial stock: {ex.Message}");
+                }
+            }
 
             CallRequestRefresh();
         }
 
         await base.OnAfterRenderAsync(firstRender);
     }
-
-    private void UpdateStock(StockItem item)
+                                                  
+    private async Task RestockClick(int itemId)
     {
-        var existing = catalogItems.Find(ci => ci.Id == item.ItemId);
-        if (existing != null)
+        if (restockAmounts.TryGetValue(itemId, out var amount))
         {
-            existing.Total = item.Total;
-            existing.Reserved = item.Reserved;
-            InvokeAsync(StateHasChanged);
+            if (hubConnection != null)
+            {
+                await hubConnection.SendAsync("Restock", itemId, amount);
+
+                restockAmounts[itemId] = 1;
+            }
         }
     }
 
-    private async Task RestockClick(int itemId)
-    {
-        //if (restockAmounts.TryGetValue(itemId, out var amount))
-        //{
-        //    if (StockHub != null)
-        //    {
-        //        await StockHub.RestockAsync(itemId, amount);
+    public bool IsConnected =>
+        hubConnection?.State == HubConnectionState.Connected;
 
-        //        restockAmounts[itemId] = 1;
-        //    }
-        //}
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
     }
+
 
     private async void DetailsClick(int id) => await DetailsComponent.Open(id);
     private async Task CreateClick() => await CreateComponent.Open();
@@ -133,12 +132,5 @@ public partial class List : BlazorComponent
         foreach (var item in catalogItems)
             restockAmounts[item.Id] = 1;
         StateHasChanged();
-    }
-
-    public class StockItem
-    {
-        public int ItemId { get; set; }
-        public int Total { get; set; }
-        public int Reserved { get; set; }
     }
 }

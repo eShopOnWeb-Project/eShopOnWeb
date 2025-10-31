@@ -99,7 +99,10 @@ public class RabbitMqService : IRabbitMqService
             if (ea.BasicProperties.CorrelationId == correlationId)
             {
                 var json = Encoding.UTF8.GetString(ea.Body.ToArray());
-                var stock = JsonSerializer.Deserialize<List<StockItem>>(json);
+                var stock = JsonSerializer.Deserialize<List<StockItem>>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
                 tcs.TrySetResult(stock!);
             }
             await Task.Yield();
@@ -110,12 +113,10 @@ public class RabbitMqService : IRabbitMqService
         var props = new BasicProperties
         {
             CorrelationId = correlationId,
-            ReplyTo = replyQueue.QueueName,
-            Persistent = true
+            ReplyTo = replyQueue.QueueName
         };
 
-        // Send empty body to request full stock
-        var body = Encoding.UTF8.GetBytes("");
+        var body = Encoding.UTF8.GetBytes("{}");
         await channel.BasicPublishAsync(
             exchange: "catalog_item_stock.exchange",
             routingKey: "catalog_item_stock.getall",
@@ -124,9 +125,9 @@ public class RabbitMqService : IRabbitMqService
             body: body
         );
 
-        var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(5000));
+        var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         if (completedTask != tcs.Task)
-            throw new TimeoutException("Timeout waiting for full stock response");
+            throw new TimeoutException("RPC request timed out waiting for response");
 
         return await tcs.Task;
     }

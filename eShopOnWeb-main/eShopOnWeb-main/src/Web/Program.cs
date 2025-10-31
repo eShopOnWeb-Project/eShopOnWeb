@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
@@ -21,10 +22,12 @@ using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Identity;
 using Microsoft.eShopWeb.Web;
+using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Configuration;
 using Microsoft.eShopWeb.Web.Features.MyOrders;
 using Microsoft.eShopWeb.Web.HealthChecks;
 using Microsoft.eShopWeb.Web.Hubs;
+using Microsoft.eShopWeb.Web.Subscribers;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -86,6 +89,9 @@ builder.Services.AddSingleton<IRabbitMqService>(sp =>
     return new RabbitMqService(options);
 });
 
+builder.Services.AddSingleton<StockCache>();
+builder.Services.AddHostedService<StockSubscriber>();
+
 builder.Services.AddCookieSettings();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -112,6 +118,12 @@ builder.Services.AddCoreServices(builder.Configuration);
 builder.Services.AddWebServices(builder.Configuration);
 
 builder.Services.AddSignalR();
+
+builder.Services.AddResponseCompression(opts =>
+{
+    opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+        ["application/octet-stream"]);
+});
 
 // Add memory cache services
 builder.Services.AddMemoryCache();
@@ -168,13 +180,14 @@ var app = builder.Build();
 
 app.Logger.LogInformation("App created...");
 
-app.Logger.LogInformation("Seeding Database...");
+app.UseResponseCompression();
 
 using (var scope = app.Services.CreateScope())
 {
     var scopedProvider = scope.ServiceProvider;
     try
     {
+        app.Logger.LogInformation("Seeding Database...");
         var catalogContext = scopedProvider.GetRequiredService<CatalogContext>();
         await CatalogContextSeed.SeedAsync(catalogContext, app.Logger);
 
@@ -186,6 +199,21 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         app.Logger.LogError(ex, "An error occurred seeding the DB.");
+    }
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var scopedProvider = scope.ServiceProvider;
+    try
+    {
+        app.Logger.LogInformation("Initializing Stock Cache...");
+        var stockCache = scopedProvider.GetRequiredService<StockCache>();
+        await stockCache.Initialize();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "An error occurred initializing stock cache.");
     }
 }
 

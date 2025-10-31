@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
+using BlazorShared.Models;
+using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Pages.Basket;
 
 public interface IRabbitMqService
@@ -9,6 +11,7 @@ public interface IRabbitMqService
     Task SendConfirmAsync(List<Item> items);
     Task SendCancelAsync(List<Item> items);
     Task SendRestockAsync(List<Item> items);
+    Task<List<StockItem>> GetFullStockAsync();
 
     public class ReserveResponse
     {

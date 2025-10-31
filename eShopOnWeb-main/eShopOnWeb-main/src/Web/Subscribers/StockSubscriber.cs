@@ -4,42 +4,52 @@ using BlazorShared.Models;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Hubs;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using static IRabbitMqService;
 
 namespace Microsoft.eShopWeb.Web.Subscribers;
 
-public class StockSubscriber
+public class StockSubscriber : BackgroundService
 {
     private readonly IHubContext<StockHub> _hub;
-    private readonly Dictionary<int, StockItem> _cache = new();
     private readonly ConnectionFactory _factory;
+    private readonly StockCache _cache;
 
-    public StockSubscriber(IHubContext<StockHub> hub, RabbitMqOptions options)
+    public StockSubscriber(IHubContext<StockHub> hub, IOptions<RabbitMqOptions> options, StockCache cache)
     {
         _hub = hub;
+        _cache = cache;
 
         _factory = new ConnectionFactory
         {
-            HostName = options.HostName,
-            UserName = options.UserName,
-            Password = options.Password,
-            Port = options.Port
+            HostName = options.Value.HostName,
+            UserName = options.Value.UserName,
+            Password = options.Value.Password,
+            Port = options.Value.Port
         };
-
-        // fire-and-forget listener safely
-        _ = StartListening();
     }
 
-    private async Task StartListening()
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var connection = await _factory.CreateConnectionAsync();
         var channel = await connection.CreateChannelAsync();
 
-        // Declare a temporary queue for all stock events
         var queue = await channel.QueueDeclareAsync("", exclusive: true);
-        await channel.QueueBindAsync(queue.QueueName, "catalog_item_stock.exchange", "catalog_item_stock.*");
+
+        var routingKeys = new[]
+        {
+            "catalog_item_stock.restock.success",
+            "catalog_item_stock.reserve.success",
+            "catalog_item_stock.cancel.success",
+            "catalog_item_stock.confirm.success"
+        };
+
+        foreach (var key in routingKeys)
+        {
+            await channel.QueueBindAsync(queue.QueueName, "catalog_item_stock.exchange", key);
+        }
 
         var consumer = new AsyncEventingBasicConsumer(channel);
 
@@ -61,57 +71,34 @@ public class StockSubscriber
             }
             catch (Exception ex)
             {
-                // optionally log exceptions here
                 Console.WriteLine($"Error handling RabbitMQ message: {ex}");
             }
         };
 
         await channel.BasicConsumeAsync(queue.QueueName, autoAck: true, consumer: consumer);
+
+        await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
     private async Task HandleMessageAsync(Item msg, string routingKey)
     {
-        if (!_cache.ContainsKey(msg.itemId))
+        var stock = _cache.Get(msg.itemId) ?? new StockItem(msg.itemId, 0, 0);
+
+        StockItem updatedStock = routingKey switch
         {
-            _cache[msg.itemId] = new StockItem
+            "catalog_item_stock.restock.success" => stock with { Total = stock.Total + msg.amount },
+            "catalog_item_stock.reserve.success" => stock with { Reserved = stock.Reserved + msg.amount },
+            "catalog_item_stock.cancel.success"  => stock with { Reserved = stock.Reserved - msg.amount },
+            "catalog_item_stock.confirm.success" => stock with
             {
-                ItemId = msg.itemId,
-                Total = 0,
-                Reserved = 0
-            };
-        }
+                Reserved = stock.Reserved - msg.amount,
+                Total = stock.Total - msg.amount
+            },
+            _ => stock
+        };
 
-        var stock = _cache[msg.itemId];
+        _cache.Update(msg.itemId, updatedStock.Total, updatedStock.Reserved);
 
-        switch (routingKey)
-        {
-            case "catalog_item_stock.restock.success":
-                stock.Total += msg.amount;
-                break;
-            case "catalog_item_stock.reserve.success":
-                stock.Reserved += msg.amount;
-                break;
-            case "catalog_item_stock.cancel.success":
-                stock.Reserved -= msg.amount;
-                break;
-            case "catalog_item_stock.confirm.success":
-                stock.Reserved -= msg.amount;
-                stock.Total -= msg.amount;
-                break;
-            default:
-                // unknown routing key
-                return;
-        }
-
-        // broadcast update to all connected SignalR clients
-        await _hub.Clients.All.SendAsync("StockUpdated", stock);
+        await _hub.Clients.All.SendAsync("StockUpdated", updatedStock);
     }
-
-    public void UpdateCache(StockItem item)
-    {
-        _cache[item.ItemId] = item;
-    }
-
-    // optional: allow querying current cache
-    public IReadOnlyDictionary<int, StockItem> GetCache() => _cache;
 }
