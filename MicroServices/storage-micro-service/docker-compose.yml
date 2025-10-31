@@ -4,10 +4,8 @@ networks:
 services:
   storage_app:
     build: .
-    container_name: storage_app
     depends_on:
       - storage_db
-      - storage_rabbitmq
     ports:
       - "3000:3000"
     environment:
@@ -22,35 +20,12 @@ services:
 
   storage_db:
     image: postgres:16
-    container_name: storage_db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: storage-db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - eshop-on-web-net
-
-  storage_rabbitmq:
-    image: rabbitmq:3-management
-    container_name: storage_rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    networks:
-      - eshop-on-web-net
-
-  storage_pgadmin:  
-    container_name: storage_pgadmin
-    image: dpage/pgadmin4:7
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "8082:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
     networks:
       - eshop-on-web-net
 

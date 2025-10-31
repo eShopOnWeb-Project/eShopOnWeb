@@ -1,7 +1,8 @@
 include:
-  - docker-compose.yml
+  - docker-compose-adminpages.yml
+  - eShopOnWeb-main/eShopOnWeb-main/docker-compose.yml
   - MicroServices/OrderMicroService/order-service/docker-compose.yml
   - MicroServices/CatalogMicroService/docker-compose.yml
-  - MicroServices\ApiGatewayMicroService/docker-compose.yml
+  - MicroServices/ApiGatewayMicroService/docker-compose.yml
   - MicroServices/storage-micro-service/docker-compose.yml
 

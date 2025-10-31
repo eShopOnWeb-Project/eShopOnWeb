@@ -4,7 +4,6 @@ networks:
 
 services:
   catalog-db:
-    container_name: catalog-db
     image: postgres:16
     environment:
       POSTGRES_USER: cataloguser
@@ -16,7 +15,6 @@ services:
       - eshop-on-web-net
 
   catalog-api:
-    container_name: catalog-api
     build: .
     depends_on:
       - catalog-db
@@ -32,19 +30,6 @@ services:
       eshop-on-web-net:
         aliases:
           - catalog-api
-
-  catalog-pgadmin:  
-    container_name: catalog-pgadmin
-    image: dpage/pgadmin4:7
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "8080:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    networks:
-      - eshop-on-web-net
 
 volumes:
   catalog_data:

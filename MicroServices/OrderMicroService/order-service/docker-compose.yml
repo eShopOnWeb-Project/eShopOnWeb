@@ -1,5 +1,5 @@
 services:
-  db:
+  order-db:
     image: postgres:15
     environment:
       POSTGRES_USER: postgres
@@ -15,33 +15,21 @@ services:
     networks:
       - eshop-on-web-net
 
-  order:
+  order-api:
     build: .
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:password@db:5432/orders
+      DATABASE_URL: postgresql+asyncpg://postgres:password@order-db:5432/orders
       RABBITMQ_URL: amqp://guest:guest@rabbitmq/
     ports:
       - "8001:8001"
     depends_on:
-      db:
+      order-db:
         condition: service_healthy
     networks:
       eshop-on-web-net:
         aliases:
           - order
     command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
-
-  order-pgadmin:
-    image: dpage/pgadmin4
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "8081:80"
-    depends_on:
-      - db
-    networks:
-      - eshop-on-web-net
 
 networks:
   eshop-on-web-net:
