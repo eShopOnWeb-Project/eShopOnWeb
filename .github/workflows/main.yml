@@ -9,18 +9,6 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
 
-    services:
-      rabbitmq:
-        image: rabbitmq:3-management
-        ports:
-          - 5672:5672
-          - 15672:15672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -64,6 +52,14 @@ jobs:
       #- name: Test .NET projects
         #run: dotnet test ./FunctionalTests.csproj --verbosity normal
         #working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+
+      - name: Create docker network if not exists
+        run: |
+          if ! docker network inspect eshop-on-web-net > /dev/null 2>&1; then
+            docker network create eshop-on-web-net
+          else
+            echo "Network eshop-on-web-net already exists"
+          fi
 
       # Build all images using all-services.yml
       - name: Build all Docker images
