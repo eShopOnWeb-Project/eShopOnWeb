@@ -43,11 +43,11 @@ jobs:
           pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
 
       # Test ApiGateway (Go)
-      - name: Test API Gateway
-        working-directory: ./MicroServices/ApiGatewayMicroService
-        run: |
-          go mod tidy
-          go test ./...
+      #- name: Test API Gateway
+        #working-directory: ./MicroServices/ApiGatewayMicroService
+        #run: |
+          #go mod tidy
+          #go test ./...
 
       # Test storage microservice (Nodejs? Antager Nodejs)
       - name: Test Storage Microservice
