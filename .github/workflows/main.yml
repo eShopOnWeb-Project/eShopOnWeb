@@ -67,4 +67,4 @@ jobs:
 
       # Build all images using all-services.yml
       - name: Build all Docker images
-        run: docker-compose -f ./all-services.yml build --parallel
+        run: docker compose -f all-services.yml up --build -d
