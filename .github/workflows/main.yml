@@ -62,7 +62,7 @@ jobs:
         working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
       
       - name: Test .NET projects
-        run: dotnet test ./FunctionalTests.csproj --no-build --verbosity normal
+        run: dotnet test ./FunctionalTests.csproj --verbosity normal
         working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
 
       # Build all images using all-services.yml
