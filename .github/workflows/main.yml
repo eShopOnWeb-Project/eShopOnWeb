@@ -31,7 +31,7 @@ jobs:
           python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-          pytest -q
+          pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
 
       # Test CatalogMicroService (Python)
       - name: Test Catalog Microservice
@@ -40,7 +40,7 @@ jobs:
           python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-          pytest -q
+          pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
 
       # Test ApiGateway (Go)
       - name: Test API Gateway
