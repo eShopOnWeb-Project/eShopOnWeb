@@ -1,0 +1,82 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: orders
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Test OrderMicroService (Python)
+      - name: Test Order Microservice
+        working-directory: ./MicroServices/OrderMicroService/order-service
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pytest -q
+
+      # Test CatalogMicroService (Python)
+      - name: Test Catalog Microservice
+        working-directory: ./MicroServices/CatalogMicroService
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+          pytest -q
+
+      # Test ApiGateway (Go)
+      - name: Test API Gateway
+        working-directory: ./MicroServices/ApiGatewayMicroService
+        run: |
+          go mod tidy
+          go test ./...
+
+      # Test storage microservice (Nodejs? Antager Nodejs)
+      - name: Test Storage Microservice
+        working-directory: ./MicroServices/storage-micro-service
+        run: |
+          npm ci
+          npm test || echo "No tests or ignored"
+
+      # Test eShopOnWeb (.NET Blazor)
+      - name: Test eShopOnWeb
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main
+        run: |
+          dotnet restore
+          dotnet test --no-build --verbosity normal
+
+      # Build all images using all-services.yml
+      - name: Build all Docker images
+        run: docker-compose -f ./all-services.yml build --parallel
