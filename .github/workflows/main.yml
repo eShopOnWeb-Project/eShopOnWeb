@@ -57,11 +57,13 @@ jobs:
           npm test || echo "No tests or ignored"
 
       # Test eShopOnWeb (.NET Blazor)
-      - name: Test eShopOnWeb
-        working-directory: ./eShopOnWeb-main/eShopOnWeb-main
-        run: |
-          dotnet restore
-          dotnet test --no-build --verbosity normal
+      - name: Restore .NET projects
+        run: dotnet restore ./FunctionalTests.csproj
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+      
+      - name: Test .NET projects
+        run: dotnet test ./FunctionalTests.csproj --no-build --verbosity normal
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
 
       # Build all images using all-services.yml
       - name: Build all Docker images
