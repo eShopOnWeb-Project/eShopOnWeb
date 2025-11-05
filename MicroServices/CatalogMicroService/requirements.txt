@@ -7,5 +7,4 @@ asyncpg # PostgreSQL driver
 alembic # For database migrations
 pytest 
 pytest-asyncio 
-httpx
 aiosqlite
