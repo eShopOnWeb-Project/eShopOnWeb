@@ -1,5 +1,5 @@
 include:
-  - docker-compose-adminpages.yml
+  - docker-compose-adminPages.yml
   - Monitoring/docker-compose-grafana.yml
   - eShopOnWeb-main/eShopOnWeb-main/docker-compose.yml
   - MicroServices/OrderMicroService/order-service/docker-compose.yml
