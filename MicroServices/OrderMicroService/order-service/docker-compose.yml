@@ -5,6 +5,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: orders
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "order-db"
+      co.elastic.logs/env: "dev"
     ports:
       - "5433:5432"  # host port 5433 maps to container 5432
     healthcheck:
@@ -20,8 +24,13 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:password@order-db:5432/orders
       RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-    ports:
-      - "8001:8001"
+    #ports:
+    #  - "8001:8001" 
+
+    expose:
+      - "8001"
+
+
     depends_on:
       order-db:
         condition: service_healthy
@@ -29,7 +38,7 @@ services:
       eshop-on-web-net:
         aliases:
           - order
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 networks:
   eshop-on-web-net:

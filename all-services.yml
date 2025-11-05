@@ -1,5 +1,7 @@
 include:
+  - logging-stack.compose.yml
   - docker-compose-adminpages.yml
+  - Monitoring/docker-compose-grafana.yml
   - eShopOnWeb-main/eShopOnWeb-main/docker-compose.yml
   - MicroServices/OrderMicroService/order-service/docker-compose.yml
   - MicroServices/CatalogMicroService/docker-compose.yml

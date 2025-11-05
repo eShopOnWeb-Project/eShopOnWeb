@@ -1,0 +1,47 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  ring:
+    kvstore:
+      store: inmemory
+  replication_factor: 1
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/boltdb-cache
+  filesystem:
+    directory: /loki/chunks
+
+ingester:
+  # Increasing this widens how far back out-of-order logs are accepted (~ max_chunk_age/2)
+  max_chunk_age: 2h
+  chunk_idle_period: 1h
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+
+limits_config:
+  ingestion_rate_mb: 64
+  ingestion_burst_size_mb: 128
+  max_line_size: 262144
+  max_label_names_per_series: 30
+  max_label_value_length: 2048
+  # Allow old samples on startup/bootstrap; tighten later if you want
+  reject_old_samples: false
+  reject_old_samples_max_age: 168h
