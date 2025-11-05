@@ -5,4 +5,4 @@ include:
   - MicroServices/CatalogMicroService/docker-compose.yml
   - MicroServices/ApiGatewayMicroService/docker-compose.yml
   - MicroServices/storage-micro-service/docker-compose.yml
-  - BasketService/BasketService/docker-compose.yml
+  - MicroServices/BasketService/BasketService/docker-compose.yml
