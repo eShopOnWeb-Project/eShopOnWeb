@@ -9,15 +9,23 @@ services:
       POSTGRES_USER: cataloguser
       POSTGRES_PASSWORD: catalogpass
       POSTGRES_DB: catalogdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb"]
+      interval: 5s
+      retries: 5
+      timeout: 5s
     volumes:
       - catalog_data:/var/lib/postgresql/data
     networks:
-      - eshop-on-web-net
+      eshop-on-web-net:
+        aliases:
+          - catalog_db
 
   catalog-api:
     build: .
     depends_on:
-      - catalog-db
+      catalog-db:
+        condition: service_healthy
     environment:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://cataloguser:catalogpass@catalog-db:5432/catalogdb
@@ -25,13 +33,11 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-    command: sh -c "./wait-for-postgres.sh"
+    command: /bin/sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     networks:
       eshop-on-web-net:
         aliases:
-          - catalog-api
+          - catalog_api
 
 volumes:
   catalog_data:
-  pgadmin_data:
-
