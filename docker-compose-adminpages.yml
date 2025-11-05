@@ -20,5 +20,9 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "rabbitmq"
+      co.elastic.logs/env: "dev"
     networks:
       - eshop-on-web-net

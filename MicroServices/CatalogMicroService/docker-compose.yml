@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: cataloguser
       POSTGRES_PASSWORD: catalogpass
       POSTGRES_DB: catalogdb
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb"]
       interval: 5s
@@ -16,6 +17,11 @@ services:
       timeout: 5s
     volumes:
       - catalog_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       eshop-on-web-net:
         aliases:
@@ -33,11 +39,21 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-    command: /bin/sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    networks:
-      eshop-on-web-net:
-        aliases:
-          - catalog_api
 
 volumes:
   catalog_data:
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks:
+      eshop-on-web-net:
+        aliases:
+          - catalog-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+
+volumes:
+  catalog_data:
+  pgadmin_data:
