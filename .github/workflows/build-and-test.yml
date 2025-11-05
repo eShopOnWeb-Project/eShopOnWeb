@@ -24,11 +24,14 @@ jobs:
       # Test CatalogMicroService (Python)
       - name: Test Catalog Microservice
         working-directory: ./MicroServices/CatalogMicroService
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./test.db
+          PYTHONPATH: ${{ github.workspace }}/MicroServices/CatalogMicroService
         run: |
           python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-          PYTHONPATH=$(pwd) pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
+          pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
 
       # Test storage microservice (Nodejs? Antager Nodejs)
       - name: Test Storage Microservice
