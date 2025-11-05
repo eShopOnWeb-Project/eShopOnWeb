@@ -1,5 +1,4 @@
 include:
-  - logging-stack.compose.yml
   - docker-compose-adminpages.yml
   - Monitoring/docker-compose-grafana.yml
   - eShopOnWeb-main/eShopOnWeb-main/docker-compose.yml
