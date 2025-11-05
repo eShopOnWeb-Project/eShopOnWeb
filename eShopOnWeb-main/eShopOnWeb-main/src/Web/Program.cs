@@ -18,6 +18,7 @@ using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Services;
+using Microsoft.eShopWeb.Infrastructure.Clients;
 using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Identity;
@@ -45,6 +46,8 @@ builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =
 
 // Register OrderService
 builder.Services.AddScoped<IOrderService, OrderService>();
+
+builder.Services.AddScoped<IBasketClient, BasketClient>();
 
 builder.Services.AddMediatR(cfg =>
 {
