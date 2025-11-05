@@ -45,13 +45,13 @@ jobs:
           npm test || echo "No tests or ignored"
 
       # Test eShopOnWeb (.NET Blazor)
-      #- name: Restore .NET projects
-        #run: dotnet restore ./FunctionalTests.csproj
-        #working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+      - name: Restore .NET projects
+        run: dotnet restore ./UnitTests.csproj
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/UnitTests
       
-      #- name: Test .NET projects
-        #run: dotnet test ./FunctionalTests.csproj --verbosity normal
-        #working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+      - name: Test .NET projects
+        run: dotnet test ./UnitTests.csproj --verbosity normal
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/UnitTests
 
       - name: Create docker network if not exists
         run: |
