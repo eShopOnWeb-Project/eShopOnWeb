@@ -2,7 +2,7 @@
 
 namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations;
 
-public partial class FixBuyerId : Migration
+public partial class FixBuyerId : EntityFrameworkCore.Migrations.Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {

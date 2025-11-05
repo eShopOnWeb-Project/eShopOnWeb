@@ -14,7 +14,7 @@ namespace Microsoft.eShopWeb.Web.Pages.Basket;
 [Authorize]
 public class CheckoutModel : PageModel
 {
-    private readonly IBasketService _basketService;
+    private readonly IBasketClient _basketClient;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly IOrderService _orderService;
     private string? _username = null;
@@ -22,18 +22,19 @@ public class CheckoutModel : PageModel
     private readonly IAppLogger<CheckoutModel> _logger;
     private readonly IRabbitMqService _rabbitMqService;
 
-    public CheckoutModel(IBasketService basketService,
-        IBasketViewModelService basketViewModelService,
+    public CheckoutModel(IBasketViewModelService basketViewModelService,
         SignInManager<ApplicationUser> signInManager,
         IOrderService orderService,
+        IBasketClient basketClient,
         IAppLogger<CheckoutModel> logger,
         IRabbitMqService rabbitMqService)
+
     {
-        _basketService = basketService;
         _signInManager = signInManager;
         _orderService = orderService;
         _basketViewModelService = basketViewModelService;
         _logger = logger;
+        _basketClient = basketClient;
         _rabbitMqService = rabbitMqService;
     }
 
@@ -86,12 +87,11 @@ public class CheckoutModel : PageModel
             }).ToList();
 
             var updateModel = items.ToDictionary(b => b.Id.ToString(), b => b.Quantity);
-            await _basketService.SetQuantities(BasketModel.Id, updateModel);
+            
+            await _basketClient.SetQuantities(BasketModel.Id, updateModel);
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
-
+            await _basketClient.DeleteBasketAsync(BasketModel.Id);
             await _rabbitMqService.SendConfirmAsync(rpcItems);
-
-            await _basketService.DeleteBasketAsync(BasketModel.Id);
         }
         catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
         {
