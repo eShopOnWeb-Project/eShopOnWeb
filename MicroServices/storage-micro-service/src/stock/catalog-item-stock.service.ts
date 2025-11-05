@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { CatalogItemStock } from './entities/catalog-item-stock.entity';
+import { Item, StockItem } from './catalog-item-stock.consumer';
 
 @Injectable()
 export class CatalogItemStockService {
@@ -10,32 +11,48 @@ export class CatalogItemStockService {
     private readonly dataSource: DataSource
   ) {}
 
-  /** Helper to safely lock an item and run transactional updates */
-  private async withLockedItem(
-    itemId: number,
-    work: (stock: CatalogItemStock, save: (s: CatalogItemStock) => Promise<void>) => Promise<void>,
-  ): Promise<CatalogItemStock> {
-    return this.dataSource.transaction(async (manager) => {
-      let stock = await manager.findOne(CatalogItemStock, {
-        where: { itemId },
-        lock: { mode: 'pessimistic_write' },
-      });
+  private async withLockedItems(
+    items: Item[],
+    work: (stocks: CatalogItemStock[], save: (s: CatalogItemStock) => Promise<void>) => Promise<void>
+  ): Promise<CatalogItemStock[]> {
+    const sortedItems = [...items].sort((a, b) => a.itemId - b.itemId);
 
-      if (!stock) {
-        stock = manager.create(CatalogItemStock, { itemId, total: 0, reserved: 0 });
-        await manager.save(stock);
+    return this.dataSource.transaction(async (manager) => {
+      const lockedStocks: CatalogItemStock[] = [];
+
+      for (const item of sortedItems) {
+        let stock = await manager.findOne(CatalogItemStock, {
+          where: { itemId: item.itemId },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!stock) {
+          stock = manager.create(CatalogItemStock, { itemId: item.itemId, total: 0, reserved: 0 });
+          await manager.save(stock);
+        }
+
+        lockedStocks.push(stock);
       }
 
       const save = async (s: CatalogItemStock) => {
         await manager.save(s);
       };
 
-      await work(stock, save);
-      return stock;
+      await work(lockedStocks, save);
+
+      return lockedStocks;
     });
   }
 
-  /** Publish events with explicit success/failure */
+  async getFullStock(): Promise<StockItem[]> {
+    const stocks = await this.dataSource.getRepository(CatalogItemStock).find();
+    return stocks.map(s => ({
+      itemId: s.itemId,
+      total: s.total,       
+      reserved: s.reserved,  
+    }));
+  }
+
   private async publishEvent(event: string, payload: any) {
     await this.amqpConnection.publish(
       'catalog_item_stock.exchange',
@@ -44,63 +61,81 @@ export class CatalogItemStockService {
     );
   }
 
-  /** Add stock to total */
-  async restock(itemId: number, amount: number) {
-    await this.withLockedItem(itemId, async (stock, save) => {
-      stock.total += amount;
-      await save(stock);
-      await this.publishEvent('restock.success', { itemId, total: stock.total });
-    });
+  async restockAtomic(items: Item[]) {
+    await this.withLockedItems(items, async (stocks, save) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        stock.total += item.amount
+        await save(stock)
+      }
+
+      await this.publishEvent('restock.success', items)
+    })
   }
 
-  /** Reserve stock for an order */
-  async reserve(itemId: number, amount: number) {
-    try {
-      await this.withLockedItem(itemId, async (stock, save) => {
-        const available = stock.total - stock.reserved;
-        if (available < amount) {
-          throw new Error(`Not enough stock. Available: ${available}`);
+  async reserveAtomic(items: Item[]) {
+    await this.withLockedItems(items, async (stocks, save) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        const available = stock.total - stock.reserved
+        if (available < item.amount) {
+          throw new Error(`Not enough stock for item ${item.itemId}. Available: ${available}`)
         }
-        stock.reserved += amount;
-        await save(stock);
-        await this.publishEvent('reserve.success', { itemId, reserved: stock.reserved });
-      });
-    } catch (err: any) {
-      await this.publishEvent('reserve.failed', { itemId, requested: amount, reason: err.message });
-      throw err;
-    }
+      }
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        stock.reserved += item.amount
+        await save(stock)
+      }
+
+      await this.publishEvent('reserve.success', items)
+    })
   }
 
-  /** Confirm an order, deduct reserved stock */
-  async confirm(itemId: number, amount: number) {
-    try {
-      await this.withLockedItem(itemId, async (stock, save) => {
-        if (stock.reserved < amount) {
-          throw new Error(`Not enough reserved stock. Reserved: ${stock.reserved}`);
+  async confirmAtomic(items: Item[]) {
+    await this.withLockedItems(items, async (stocks, save) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        if (stock.reserved < item.amount) {
+          throw new Error(`Not enough reserved stock for item ${item.itemId}. Reserved: ${stock.reserved}`)
         }
-        stock.reserved -= amount;
-        stock.total -= amount;
-        await save(stock);
-        await this.publishEvent('confirm.success', { itemId, total: stock.total });
-      });
-    } catch (err: any) {
-      await this.publishEvent('confirm.failed', { itemId, requested: amount, reason: err.message });
-      throw err;
-    }
+      }
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        stock.reserved -= item.amount
+        stock.total -= item.amount
+        await save(stock)
+      }
+
+      await this.publishEvent('confirm.success', items)
+    })
   }
 
-  /** Cancel a reservation */
-  async cancelReservation(itemId: number, amount: number) {
-    try {
-      await this.withLockedItem(itemId, async (stock, save) => {
-        if (stock.reserved < amount) throw new Error(`Cannot cancel more than reserved. Reserved: ${stock.reserved}`);
-        stock.reserved -= amount;
-        await save(stock);
-        await this.publishEvent('cancel.success', { itemId, reserved: stock.reserved });
-      });
-    } catch (err: any) {
-      await this.publishEvent('cancel.failed', { itemId, requested: amount, reason: err.message });
-      throw err;
-    }
+  async cancelAtomic(items: Item[]) {
+    await this.withLockedItems(items, async (stocks, save) => {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        if (stock.reserved < item.amount) {
+          throw new Error(`Cannot cancel more than reserved for item ${item.itemId}. Reserved: ${stock.reserved}`)
+        }
+      }
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        const stock = stocks[i]
+        stock.reserved -= item.amount
+        await save(stock)
+      }
+
+      await this.publishEvent('cancel.success', items)
+    })
   }
 }

@@ -26,3 +26,12 @@ services:
       co.elastic.logs/env: "dev"
     networks:
       - eshop-on-web-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      
+volumes:
+  pgadmin_data:

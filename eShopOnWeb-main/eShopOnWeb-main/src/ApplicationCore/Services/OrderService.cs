@@ -3,34 +3,35 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
 using Microsoft.eShopWeb.ApplicationCore.Entities;
-using Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Specifications;
 
+namespace Microsoft.eShopWeb.ApplicationCore.Services;
+
 public class OrderService : IOrderService
 {
     private readonly IOrderServiceClient _orderServiceClient;
-    private readonly IRepository<Basket> _basketRepository;
     private readonly IRepository<CatalogItem> _itemRepository;
     private readonly IUriComposer _uriComposer;
+    private readonly IBasketClient _basketClient;
 
     public OrderService(
-        IRepository<Basket> basketRepository,
         IRepository<CatalogItem> itemRepository,
         IUriComposer uriComposer,
-        IOrderServiceClient orderServiceClient)
+        IOrderServiceClient orderServiceClient, 
+        IBasketClient basketClient)
     {
-        _basketRepository = basketRepository;
         _itemRepository = itemRepository;
         _uriComposer = uriComposer;
         _orderServiceClient = orderServiceClient;
+        _basketClient = basketClient;
     }
-
+    
     public async Task CreateOrderAsync(int basketId, Address shippingAddress)
     {
-        var basket = await _basketRepository.FirstOrDefaultAsync(new BasketWithItemsSpecification(basketId));
-        if (basket == null || !basket.Items.Any()) throw new InvalidOperationException("Basket is empty or not found.");
+        var basket = await _basketClient.GetBasket(basketId);
+        if (basket == null || basket.Items.Count == 0) throw new InvalidOperationException("Basket is empty or not found.");
 
         var catalogItems = await _itemRepository.ListAsync(new CatalogItemsSpecification(basket.Items.Select(i => i.CatalogItemId).ToArray()));
 
