@@ -1,17 +1,19 @@
-# husk: docker network create eshop-on-web-net
 networks:
   eshop-on-web-net:
     external: true
 
 services:
   eshopwebmvc:
-    container_name: eshopwebmvc  
     image: ${DOCKER_REGISTRY-}eshopwebmvc
     build:
       context: .
       dockerfile: src/Web/Dockerfile
     depends_on:
-      - sqlserver
+      rabbitmq:
+        condition: service_healthy
+      sqlserver:
+        condition: service_healthy
+
     networks:
       - eshop-on-web-net
     environment:
@@ -25,7 +27,6 @@ services:
       - ./keys:/keys
 
   sqlserver:
-    container_name: sqlserver
     image: mcr.microsoft.com/azure-sql-edge
     ports:
       - "1433:1433"
@@ -36,6 +37,12 @@ services:
       - eshop-on-web-net
     volumes:
       - sqlserver_data:/var/lib/sqlserver/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P @someThingComplicated1234 -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   sqlserver_data:

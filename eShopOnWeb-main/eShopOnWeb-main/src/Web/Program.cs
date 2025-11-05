@@ -5,12 +5,14 @@ using BlazorAdmin;
 using BlazorAdmin.Services;
 using Blazored.LocalStorage;
 using BlazorShared;
+using BlazorShared.Models;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
@@ -21,10 +23,14 @@ using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Identity;
 using Microsoft.eShopWeb.Web;
+using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Configuration;
 using Microsoft.eShopWeb.Web.Features.MyOrders;
 using Microsoft.eShopWeb.Web.HealthChecks;
+using Microsoft.eShopWeb.Web.Hubs;
+using Microsoft.eShopWeb.Web.Subscribers;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -76,6 +82,18 @@ if (builder.Environment.EnvironmentName == "Docker")
         .SetApplicationName("eshopweb");
 }
 
+// Configure RabbitMQ options from appsettings.json
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMQ"));
+
+// Register RabbitMqService
+builder.Services.AddSingleton<IRabbitMqService>(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+    return new RabbitMqService(options);
+});
+
+builder.Services.AddSingleton<StockCache>();
+builder.Services.AddHostedService<StockSubscriber>();
 
 builder.Services.AddCookieSettings();
 
@@ -102,6 +120,13 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddCoreServices(builder.Configuration);
 builder.Services.AddWebServices(builder.Configuration);
 
+builder.Services.AddSignalR();
+
+builder.Services.AddResponseCompression(opts =>
+{
+    opts.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+        ["application/octet-stream"]);
+});
 
 // Add memory cache services
 builder.Services.AddMemoryCache();
@@ -158,13 +183,14 @@ var app = builder.Build();
 
 app.Logger.LogInformation("App created...");
 
-app.Logger.LogInformation("Seeding Database...");
+app.UseResponseCompression();
 
 using (var scope = app.Services.CreateScope())
 {
     var scopedProvider = scope.ServiceProvider;
     try
     {
+        app.Logger.LogInformation("Seeding Database...");
         var catalogContext = scopedProvider.GetRequiredService<CatalogContext>();
         await CatalogContextSeed.SeedAsync(catalogContext, app.Logger);
 
@@ -176,6 +202,21 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         app.Logger.LogError(ex, "An error occurred seeding the DB.");
+    }
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var scopedProvider = scope.ServiceProvider;
+    try
+    {
+        app.Logger.LogInformation("Initializing Stock Cache...");
+        var stockCache = scopedProvider.GetRequiredService<StockCache>();
+        await stockCache.Initialize();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "An error occurred initializing stock cache.");
     }
 }
 
@@ -231,13 +272,14 @@ app.UseCookiePolicy();
 app.UseAuthentication();
 app.UseAuthorization();
 
-
 app.MapControllerRoute("default", "{controller:slugify=Home}/{action:slugify=Index}/{id?}");
 app.MapRazorPages();
 app.MapHealthChecks("home_page_health_check", new HealthCheckOptions { Predicate = check => check.Tags.Contains("homePageHealthCheck") });
 app.MapHealthChecks("api_health_check", new HealthCheckOptions { Predicate = check => check.Tags.Contains("apiHealthCheck") });
 //app.MapBlazorHub("/admin");
 app.MapFallbackToFile("index.html");
+
+app.MapHub<StockHub>("/stockhub");
 
 app.Logger.LogInformation("LAUNCHING");
 app.Run();

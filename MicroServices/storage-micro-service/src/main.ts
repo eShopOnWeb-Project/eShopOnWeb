@@ -10,7 +10,7 @@ async function bootstrap() {
   const microservice = app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
     options: {
-      urls: [process.env.RABBITMQ_URI || 'amqp://guest:guest@storage_rabbitmq:5672'],
+      urls: [process.env.RABBITMQ_URI || 'amqp://guest:guest@rabbitmq:5672'],
       queue: 'catalog_item_stock_queue',
       queueOptions: { durable: true },
     },

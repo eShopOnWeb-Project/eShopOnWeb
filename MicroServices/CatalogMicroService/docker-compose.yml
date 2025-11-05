@@ -4,22 +4,28 @@ networks:
 
 services:
   catalog-db:
-    container_name: catalog-db
     image: postgres:16
     environment:
       POSTGRES_USER: cataloguser
       POSTGRES_PASSWORD: catalogpass
       POSTGRES_DB: catalogdb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 5
+      timeout: 5s
     volumes:
       - catalog_data:/var/lib/postgresql/data
     networks:
-      - eshop-on-web-net
+      eshop-on-web-net:
+        aliases:
+          - catalog_db
 
   catalog-api:
-    container_name: catalog-api
     build: .
     depends_on:
-      - catalog-db
+      catalog-db:
+        condition: service_healthy
     environment:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://cataloguser:catalogpass@catalog-db:5432/catalogdb
@@ -27,26 +33,12 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-    command: sh -c "./wait-for-postgres.sh"
+    command: /bin/sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     networks:
       eshop-on-web-net:
         aliases:
-          - catalog-api
-
-  #catalog-pgadmin:  
-  #  container_name: catalog-pgadmin
-  #  image: dpage/pgadmin4:7
-  #  environment:
-  #    PGADMIN_DEFAULT_EMAIL: admin@admin.com
-  #    PGADMIN_DEFAULT_PASSWORD: admin
-  #  ports:
-  #    - "8080:80"
-  #  volumes:
-  #    - pgadmin_data:/var/lib/pgadmin
-  #  networks:
-  #    - eshop-on-web-net
+          - catalog_api
 
 volumes:
   catalog_data:
-  pgadmin_data:
 

@@ -28,6 +28,10 @@ else
                 <th>Brand</th>
                 <th>Id</th>
                 <th>Name</th>
+                <th>Total</th>
+                <th>Reserved</th>
+                <th>Available</th>
+                <th>Restock</th>
                 <th>@nameof(CatalogItem.Description)</th>
                 <th>@nameof(CatalogItem.Price)</th>
                 <th>Actions</th>
@@ -44,6 +48,13 @@ else
                     <td>@item.CatalogBrand</td>
                     <td>@item.Id</td>
                     <td>@item.Name</td>
+                    <td>@item.Total</td>
+                    <td>@item.Reserved</td>
+                    <td>@(item.Total - item.Reserved)</td>
+                    <td>
+                        <input @onclick:stopPropagation="true" type="number" min="1" @bind="restockAmounts[item.Id]" style="width:70px" />
+                        <button class="btn btn-success" @onclick="() => RestockClick(item.Id)" @onclick:stopPropagation="true">Restock</button>
+                    </td>
                     <td>@item.Description</td>
                     <td>@item.Price</td>
                     <td>

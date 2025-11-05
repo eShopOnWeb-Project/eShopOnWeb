@@ -9,6 +9,13 @@
     </div>
 </section>
 
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger" role="alert">
+        @TempData["Error"]
+    </div>
+}
+
 <div class="container">
 
     @if (Model.BasketModel.Items.Any())

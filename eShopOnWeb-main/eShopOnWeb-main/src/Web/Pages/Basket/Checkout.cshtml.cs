@@ -7,7 +7,6 @@ using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Exceptions;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.Infrastructure.Identity;
-using Microsoft.eShopWeb.Web.APIClients;
 using Microsoft.eShopWeb.Web.Interfaces;
 
 namespace Microsoft.eShopWeb.Web.Pages.Basket;
@@ -21,30 +20,59 @@ public class CheckoutModel : PageModel
     private string? _username = null;
     private readonly IBasketViewModelService _basketViewModelService;
     private readonly IAppLogger<CheckoutModel> _logger;
+    private readonly IRabbitMqService _rabbitMqService;
 
     public CheckoutModel(IBasketViewModelService basketViewModelService,
         SignInManager<ApplicationUser> signInManager,
         IOrderService orderService,
-        IAppLogger<CheckoutModel> logger, IBasketClient basketClient)
+        IBasketClient basketClient,
+        IAppLogger<CheckoutModel> logger,
+        IRabbitMqService rabbitMqService)
+
     {
         _signInManager = signInManager;
         _orderService = orderService;
         _basketViewModelService = basketViewModelService;
         _logger = logger;
         _basketClient = basketClient;
+        _rabbitMqService = rabbitMqService;
     }
 
     public BasketViewModel BasketModel { get; set; } = new BasketViewModel();
 
-    public async Task OnGet()
+    public async Task<IActionResult> OnGetAsync()
     {
         await SetBasketModelAsync();
+
+        try
+        {
+            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            {
+                itemId = i.CatalogItemId,
+                amount = i.Quantity
+            }).ToList();
+
+            var response = await _rabbitMqService.ReserveAsync(rpcItems);
+            if (!response.success)
+            {
+                TempData["Error"] = $"Reservation failed: {response.reason}";
+                return RedirectToPage("/Basket/Index");
+            }
+            return Page();
+        }
+        catch (TimeoutException)
+        {
+            TempData["Error"] = "Reservation timed out.";
+            return RedirectToPage("/Basket/Index");
+        }
     }
 
-    public async Task<IActionResult> OnPost(IEnumerable<BasketItemViewModel> items)
+    public async Task<IActionResult> OnPostPayNowAsync(IEnumerable<BasketItemViewModel> items)
     {
         try
         {
+            _logger.LogInformation("Pay now clicked by user.");
+
             await SetBasketModelAsync();
 
             if (!ModelState.IsValid)
@@ -52,20 +80,55 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
+            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            {
+                itemId = i.CatalogItemId,
+                amount = i.Quantity
+            }).ToList();
+
             var updateModel = items.ToDictionary(b => b.Id.ToString(), b => b.Quantity);
             
             await _basketClient.SetQuantities(BasketModel.Id, updateModel);
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketClient.DeleteBasketAsync(BasketModel.Id);
+            await _rabbitMqService.SendConfirmAsync(rpcItems);
         }
         catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
         {
-            //Redirect to Empty Basket page
             _logger.LogWarning(emptyBasketOnCheckoutException.Message);
             return RedirectToPage("/Basket/Index");
         }
 
         return RedirectToPage("Success");
+    }
+
+    public async Task<IActionResult> OnPostCancelAsync(IEnumerable<BasketItemViewModel> items)
+    {
+        try
+        {
+            _logger.LogInformation("Payment cancelled by user.");
+
+            await SetBasketModelAsync();
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest();
+            }
+
+            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            {
+                itemId = i.CatalogItemId,
+                amount = i.Quantity
+            }).ToList();
+
+            await _rabbitMqService.SendCancelAsync(rpcItems);
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e.Message);
+        }
+
+        return RedirectToPage("/Basket/Index");
     }
 
     private async Task SetBasketModelAsync()
