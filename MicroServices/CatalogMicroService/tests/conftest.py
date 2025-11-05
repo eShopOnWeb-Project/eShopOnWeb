@@ -7,6 +7,9 @@ from app.database import get_db
 from app.main import app
 import pytest_asyncio
 import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 DATABASE_URL_TEST = "sqlite+aiosqlite:///./test.db"
 
