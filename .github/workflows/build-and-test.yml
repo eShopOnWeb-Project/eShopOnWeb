@@ -28,14 +28,7 @@ jobs:
           python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-          pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
-
-      # Test ApiGateway (Go)
-      #- name: Test API Gateway
-        #working-directory: ./MicroServices/ApiGatewayMicroService
-        #run: |
-          #go mod tidy
-          #go test ./...
+          PYTHONPATH=$(pwd) pytest -q || { rc=$?; if [ $rc -eq 5 ]; then echo "No tests collected — continuing CI (exit code $rc)"; else exit $rc; fi }
 
       # Test storage microservice (Nodejs? Antager Nodejs)
       - name: Test Storage Microservice
@@ -45,13 +38,13 @@ jobs:
           npm test || echo "No tests or ignored"
 
       # Test eShopOnWeb (.NET Blazor)
-      #- name: Restore .NET projects
-        #run: dotnet restore ./FunctionalTests.csproj
-        #working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+      - name: Restore .NET projects
+        run: dotnet restore ./UnitTests.csproj
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/UnitTests
       
-      #- name: Test .NET projects
-        #run: dotnet test ./FunctionalTests.csproj --verbosity normal
-        #working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/FunctionalTests
+      - name: Test .NET projects
+        run: dotnet test ./UnitTests.csproj --verbosity normal
+        working-directory: ./eShopOnWeb-main/eShopOnWeb-main/tests/UnitTests
 
       - name: Create docker network if not exists
         run: |
