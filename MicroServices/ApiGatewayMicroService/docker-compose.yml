@@ -6,10 +6,6 @@ networks:
 services:
   gateway:
     build: .
-    labels:
-      co.elastic.logs/enabled: "true"
-      co.elastic.logs/service: "api-gateway"
-      co.elastic.logs/env: "dev"
     ports:
       - "8090:8080"            
     environment:
