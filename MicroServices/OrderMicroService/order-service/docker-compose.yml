@@ -5,10 +5,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: orders
-    labels:
-      co.elastic.logs/enabled: "true"
-      co.elastic.logs/service: "order-db"
-      co.elastic.logs/env: "dev"
     ports:
       - "5433:5432"  # host port 5433 maps to container 5432
     healthcheck:
@@ -26,11 +22,8 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq/
     #ports:
     #  - "8001:8001" 
-
     expose:
       - "8001"
-
-
     depends_on:
       order-db:
         condition: service_healthy
