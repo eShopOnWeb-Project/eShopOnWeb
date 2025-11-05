@@ -5,6 +5,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: orders
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "order-db"
+      co.elastic.logs/env: "dev"
     ports:
       - "5433:5432"  # host port 5433 maps to container 5432
     healthcheck:
@@ -20,6 +24,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:password@order-db:5432/orders
       RABBITMQ_URL: amqp://guest:guest@rabbitmq/
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "order-api"
+      co.elastic.logs/env: "dev"
+      co.elastic.logs/processors: >-
+        [{"add_fields": {"target": "service", "fields": {"name": "order-api", "env": "dev"}}}]
     ports:
       - "8001:8001"
     depends_on:

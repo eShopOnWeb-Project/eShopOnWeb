@@ -8,6 +8,10 @@ services:
       - storage_db
     ports:
       - "3000:3000"
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "storage_app"
+      co.elastic.logs/env: "dev"
     environment:
       DATABASE_HOST: storage_db
       DATABASE_PORT: 5432
@@ -24,6 +28,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: storage-db
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "storage-db"
+      co.elastic.logs/env: "dev"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:

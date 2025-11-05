@@ -9,15 +9,29 @@ services:
       POSTGRES_USER: cataloguser
       POSTGRES_PASSWORD: catalogpass
       POSTGRES_DB: catalogdb
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "catalog-db"
+      co.elastic.logs/env: "dev"
     volumes:
       - catalog_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cataloguser -d catalogdb -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - eshop-on-web-net
 
   catalog-api:
     build: .
     depends_on:
-      - catalog-db
+      catalog-db:
+        condition: service_healthy
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/service: "catalog-api"
+      co.elastic.logs/env: "dev"
     environment:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://cataloguser:catalogpass@catalog-db:5432/catalogdb
@@ -25,13 +39,18 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-    command: sh -c "./wait-for-postgres.sh"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
     networks:
       eshop-on-web-net:
         aliases:
           - catalog-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 
 volumes:
   catalog_data:
   pgadmin_data:
-
