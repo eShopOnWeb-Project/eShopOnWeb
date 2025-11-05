@@ -5,3 +5,7 @@ python-dotenv # For environment variable management
 sqlmodel # ORM
 asyncpg # PostgreSQL driver
 alembic # For database migrations
+pytest 
+pytest-asyncio 
+httpx
+aiosqlite
