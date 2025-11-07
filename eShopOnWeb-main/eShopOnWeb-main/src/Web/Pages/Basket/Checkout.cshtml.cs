@@ -28,7 +28,6 @@ public class CheckoutModel : PageModel
         IBasketClient basketClient,
         IAppLogger<CheckoutModel> logger,
         IRabbitMqService rabbitMqService)
-
     {
         _signInManager = signInManager;
         _orderService = orderService;
@@ -55,7 +54,7 @@ public class CheckoutModel : PageModel
             var response = await _rabbitMqService.ReserveAsync(rpcItems);
             if (!response.success)
             {
-                TempData["Error"] = $"Reservation failed: {response.reason}";
+                TempData["Error"] = $"Reservation failed: {response.reason}          [HELP: go to admin page to restock more items ]";
                 return RedirectToPage("/Basket/Index");
             }
             return Page();
@@ -80,18 +79,11 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
-            {
-                itemId = i.CatalogItemId,
-                amount = i.Quantity
-            }).ToList();
-
             var updateModel = items.ToDictionary(b => b.Id.ToString(), b => b.Quantity);
             
             await _basketClient.SetQuantities(BasketModel.Id, updateModel);
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketClient.DeleteBasketAsync(BasketModel.Id);
-            await _rabbitMqService.SendConfirmAsync(rpcItems);
         }
         catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
         {
