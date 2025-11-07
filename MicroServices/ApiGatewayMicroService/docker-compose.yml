@@ -1,18 +1,28 @@
-# MicroServices/ApiGatewayMicroService/docker-compose.yml
-networks:
-  eshop-on-web-net:
-    external: true
-
 services:
   gateway:
     build: .
     ports:
-      - "8090:8080"            
+      - "8090:8080"
+    depends_on:
+      certgen:
+        condition: service_completed_successfully     
+    volumes:
+      - dev-secrets:/secrets:ro
     environment:
       ORDERS_BACKENDS:  http://order:8001
       CATALOG_BACKENDS: http://catalog-api:8000
+      ISSUER: eshop-gateway
+      KEY_ID: gw-key-1
+      JWT_PRIVATE_PATH: /secrets/jwt/gateway-jwt-private.pem
+      MTLS_CLIENT_CERT: /secrets/clients/gateway/client.crt
+      MTLS_CLIENT_KEY:  /secrets/clients/gateway/client.key
+      MTLS_SERVICE_CA:  /secrets/ca/ca.crt
     networks:
       eshop-on-web-net:
         aliases:
           - gateway           
     restart: unless-stopped
+
+networks:
+  eshop-on-web-net:
+    external: true

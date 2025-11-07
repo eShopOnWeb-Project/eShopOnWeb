@@ -61,7 +61,6 @@ func parseBackendList(envVal string, defaults ...string) []*url.URL {
 	return urls
 }
 
-// join URL paths without double slashes
 func joinPaths(a, b string) string {
 	as := strings.HasSuffix(a, "/")
 	bp := strings.HasPrefix(b, "/")
@@ -78,7 +77,6 @@ func joinPaths(a, b string) string {
 func dropHopByHop(h http.Header) {
 	hh := []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate",
 		"Proxy-Authorization", "TE", "Trailers", "Transfer-Encoding", "Upgrade"}
-	// Also remove per-connection headers listed in Connection
 	for _, f := range h["Connection"] {
 		for _, sf := range strings.Split(f, ",") {
 			h.Del(textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(sf)))
@@ -127,7 +125,6 @@ func singleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			log.Printf("proxy error: %v", err)
 			http.Error(w, "backend service unavailable", http.StatusBadGateway)
 		},
-		BufferPool: nil, // default
 	}
 }
 
@@ -140,7 +137,6 @@ func forwardToService(w http.ResponseWriter, r *http.Request, svc *BackendServic
 		return
 	}
 
-	// Build final request path/query
 	outPath := joinPaths(target.Path, strippedPath)
 	outQuery := r.URL.RawQuery
 
@@ -158,19 +154,14 @@ func forwardToService(w http.ResponseWriter, r *http.Request, svc *BackendServic
 		}(),
 	)
 
-	// Prepare clone for proxy (to avoid mutating the original)
 	r2 := r.Clone(r.Context())
 	r2.URL.Path = outPath
-	r2.URL.RawPath = "" // let Go encode
 	r2.URL.RawQuery = outQuery
-
-	// Clean inbound hop-by-hop headers
 	dropHopByHop(r2.Header)
 	if r2.Body == nil {
 		r2.Body = http.NoBody
 	}
 
-	// Use a per-target proxy instance
 	proxy := singleHostReverseProxy(target)
 	proxy.ServeHTTP(w, r2)
 }
@@ -179,22 +170,40 @@ func stripFirstSegment(path, segment string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	// Remove exactly the first "/segment"
 	stripped := strings.TrimPrefix(path, "/"+segment)
 	if stripped == "" {
 		return "/"
 	}
-	// Ensure leading slash
 	if !strings.HasPrefix(stripped, "/") {
 		stripped = "/" + stripped
 	}
 	return stripped
 }
 
+// --------- CORS Middleware ---------
+
+func withCORS(next http.Handler, allowedOrigin string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+			w.Header().Set("Access-Control-Expose-Headers", "content-type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // --------- Main ---------
 
 func main() {
-
 	catalogBackends := parseBackendList(
 		os.Getenv("CATALOG_BACKENDS"),
 		"http://catalog-api:8000",
@@ -209,7 +218,6 @@ func main() {
 		"orders":  {Name: "orders", Instances: ordersBackends},
 	}
 
-	// Factory for path-based services
 	handler := func(serviceName string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			svc := services[serviceName]
@@ -222,21 +230,22 @@ func main() {
 		}
 	}
 
-	// Routes (path-prefix routing)
-	http.HandleFunc("/catalog/", handler("catalog"))
-	http.HandleFunc("/orders/", handler("orders"))
-
-	// (Optional) root landing + health
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/catalog/", handler("catalog"))
+	mux.HandleFunc("/orders/", handler("orders"))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "gateway: try /catalog/... or /orders/...\n")
 	})
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
 		io.WriteString(w, "ok")
 	})
 
+	// Allow your Blazor Admin frontend origin here
+	adminOrigin := "http://localhost:5106"
+
 	addr := ":8080"
-	log.Printf("API Gateway listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Printf("API Gateway listening on %s (CORS allowed from %s)", addr, adminOrigin)
+	log.Fatal(http.ListenAndServe(addr, withCORS(mux, adminOrigin)))
 }

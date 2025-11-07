@@ -14,19 +14,28 @@ services:
       timeout: 5s
     networks:
       - eshop-on-web-net
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
 
   order-api:
     build: .
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:password@order-db:5432/orders
       RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-    #ports:
-    #  - "8001:8001" 
+      TLS_CERT: /secrets/services/orders/server.crt
+      TLS_KEY:  /secrets/services/orders/server.key
+      TLS_CA:   /secrets/ca/ca.crt
+      JWT_PUBLIC_PEM: /secrets/jwt/gateway-jwt-public.pem
     expose:
       - "8001"
     depends_on:
       order-db:
         condition: service_healthy
+      certgen:
+        condition: service_completed_successfully
+    volumes:
+      - dev-secrets:/secrets:ro
     networks:
       eshop-on-web-net:
         aliases:
