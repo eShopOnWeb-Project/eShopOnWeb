@@ -132,11 +132,6 @@ public class RabbitMqService : IRabbitMqService
         return await tcs.Task;
     }
 
-    public async Task SendConfirmAsync(List<Item> items)
-    {
-        await PublishAsync("catalog_item_stock.confirm", items);
-    }
-
     public async Task SendRestockAsync(List<Item> items)
     {
         await PublishAsync("catalog_item_stock.restock", items);
