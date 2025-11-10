@@ -12,14 +12,14 @@ namespace Microsoft.eShopWeb.Web.Pages.Basket;
 public class IndexModel : PageModel
 {
     private readonly IBasketViewModelService _basketViewModelService;
-    private readonly IRepository<CatalogItem> _itemRepository;
+    private readonly ICatalogApiClient _catalogApiClient;
     private readonly IBasketClient _basketClient;
 
     public IndexModel(IBasketViewModelService basketViewModelService,
-        IRepository<CatalogItem> itemRepository, IBasketClient basketClient)
+        IBasketClient basketClient, ICatalogApiClient catalogApiClient)
     {
         _basketViewModelService = basketViewModelService;
-        _itemRepository = itemRepository;
+        _catalogApiClient = catalogApiClient;
         _basketClient = basketClient;
     }
 
@@ -37,7 +37,7 @@ public class IndexModel : PageModel
             return RedirectToPage("/Index");
         }
 
-        var item = await _itemRepository.GetByIdAsync(productDetails.Id);
+        var item = await _catalogApiClient.GetCatalogItemAsync(productDetails.Id);
         if (item == null)
         {
             return RedirectToPage("/Index");

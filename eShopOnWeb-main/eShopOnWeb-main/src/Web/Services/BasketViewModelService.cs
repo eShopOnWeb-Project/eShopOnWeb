@@ -4,6 +4,7 @@ using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Specifications;
 using Microsoft.eShopWeb.Web.Interfaces;
 using Microsoft.eShopWeb.Web.Pages.Basket;
+using Microsoft.eShopWeb.Web.Pages.Shared.Components.BasketComponent;
 
 namespace Microsoft.eShopWeb.Web.Services;
 
@@ -11,14 +12,14 @@ public class BasketViewModelService : IBasketViewModelService
 {
     private readonly IBasketClient _basketClient;
     private readonly IUriComposer _uriComposer;
-    private readonly IRepository<CatalogItem> _itemRepository;
+    private readonly ICatalogApiClient _catalogApiClient;
 
-    public BasketViewModelService(IRepository<CatalogItem> itemRepository,
+    public BasketViewModelService(ICatalogApiClient catalogApiClient,
         IUriComposer uriComposer, IBasketClient basketClient)
     {
         _uriComposer = uriComposer;
         _basketClient = basketClient;
-        _itemRepository = itemRepository;
+        _catalogApiClient = catalogApiClient;
     }
 
     public async Task<BasketViewModel> GetOrCreateBasketForUser(string userName)
@@ -30,8 +31,12 @@ public class BasketViewModelService : IBasketViewModelService
 
     private async Task<List<BasketItemViewModel>> GetBasketItems(IReadOnlyCollection<BasketItemDTO> basketItems)
     {
-        var catalogItemsSpecification = new CatalogItemsSpecification(basketItems.Select(b => b.CatalogItemId).ToArray());
-        var catalogItems = await _itemRepository.ListAsync(catalogItemsSpecification);
+        var catalogItemsResponse = await _catalogApiClient.GetCatalogItemsAsync();
+        var catalogItems = catalogItemsResponse.CatalogItems;
+        var basketItemIds = basketItems.Select(i => i.CatalogItemId).ToHashSet();
+        catalogItems = catalogItems
+            .Where(ci => basketItemIds.Contains(ci.Id))
+            .ToList();
 
         var items = basketItems.Select(basketItem =>
         {

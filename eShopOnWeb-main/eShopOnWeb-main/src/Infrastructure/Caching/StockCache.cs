@@ -1,8 +1,12 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using BlazorShared.Models;
+using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 
-namespace Microsoft.eShopWeb.Web.Cache;
+namespace Microsoft.eShopWeb.Infrastructure.Caching;
 
 public class StockCache
 {

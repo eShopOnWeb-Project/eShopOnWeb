@@ -1,8 +1,9 @@
 ﻿using BlazorShared.Models;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.eShopWeb.Web.Cache;
-using Microsoft.eShopWeb.Web.Subscribers;
-using static IRabbitMqService;
+using Microsoft.eShopWeb.Infrastructure.Caching;
+using Microsoft.eShopWeb.Web.Services;
+using Microsoft.eShopWeb.ApplicationCore.Interfaces;
+using Microsoft.eShopWeb.ApplicationCore.DTOs.RabbitMQ;
 
 namespace Microsoft.eShopWeb.Web.Hubs;
 

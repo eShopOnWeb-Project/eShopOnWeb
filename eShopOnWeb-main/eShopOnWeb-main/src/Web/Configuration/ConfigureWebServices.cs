@@ -1,6 +1,7 @@
 ﻿using BlazorShared;
 using MediatR;
-using Microsoft.eShopWeb.Web.APIClients;
+using Microsoft.eShopWeb.ApplicationCore.Interfaces;
+using Microsoft.eShopWeb.Infrastructure.Clients;
 using Microsoft.eShopWeb.Web.Interfaces;
 using Microsoft.eShopWeb.Web.Services;
 using Microsoft.Extensions.Options;

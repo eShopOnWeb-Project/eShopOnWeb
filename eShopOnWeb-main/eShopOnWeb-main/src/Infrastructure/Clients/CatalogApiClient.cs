@@ -1,18 +1,13 @@
-﻿using System.Text.Json;
-using Microsoft.eShopWeb.Web.DTOs;
-using Microsoft.eShopWeb.Web.ViewModels;
+﻿using System.Collections.Generic;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.eShopWeb.ApplicationCore.DTOs;
+using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using static System.Net.WebRequestMethods;
 
-namespace Microsoft.eShopWeb.Web.APIClients;
-
-public interface ICatalogApiClient
-{
-    Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync(int pageIndex, int pageSize, int? brandId = null, int? typeId = null);
-    Task<List<CatalogBrandDTO>> GetBrandsAsync();
-    Task<List<CatalogTypeDTO>> GetCatalogTypesAsync();
-    Task<CatalogItemDTO> GetCatalogItemAsync(int catalogItemId);
-    Task<CatalogItemDTO> UpdateCatalogItemAsync(CatalogItemDTO item);
-}
+namespace Microsoft.eShopWeb.Infrastructure.Clients;
 
 public class CatalogApiClient : ICatalogApiClient
 {
@@ -44,6 +39,17 @@ public class CatalogApiClient : ICatalogApiClient
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
         return result ?? new List<CatalogBrandDTO>();
+    }
+
+    public async Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync()
+    {
+        var response = await _httpClient.GetAsync("items");
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<ListPagedCatalogItemResponse>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            ?? new ListPagedCatalogItemResponse();
     }
 
     public async Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync(
