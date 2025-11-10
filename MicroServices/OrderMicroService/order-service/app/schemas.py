@@ -47,3 +47,10 @@ class OrderRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ----------------------- Event Schemas -----------------------
+
+class EventItem(BaseModel):
+    itemId: int
+    amount: int

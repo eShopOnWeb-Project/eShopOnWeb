@@ -1,0 +1,42 @@
+﻿services:
+  basket-db:
+    image: postgres:16
+    container_name: basket-db
+    environment:
+      POSTGRES_USER: basketuser
+      POSTGRES_PASSWORD: basketpass
+      POSTGRES_DB: basketdb
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basketuser -d basketdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - eshop-on-web-net
+
+  basket-api:
+    container_name: basket-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      basket-db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:5004
+      ConnectionStrings__Default: Host=basket-db;Port=5432;Database=basketdb;Username=basketuser;Password=basketpass
+    ports:
+      - "5004:5004"
+    networks:
+      eshop-on-web-net:
+        aliases:
+          - basket-api
+
+networks:
+  eshop-on-web-net:
+    external: true
+
+volumes:
+  basket_data:

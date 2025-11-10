@@ -8,6 +8,10 @@ from sqlalchemy import select
 
 from app import models, schemas, events
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # -----------------------
 # Helper: calculate total
 # -----------------------
@@ -48,33 +52,16 @@ async def create_order(db: AsyncSession, order_in: schemas.OrderCreate) -> schem
     # Compute total
     total_amount = calculate_total(order.items)
 
-    # Publish event (optional)
-    payload = {
-        "type": "OrderCreated",
-        "version": 1,
-        "data": {
-            "order_id": order.id,
-            "buyer_id": order.buyer_id,
-            "items": [
-                {
-                    "catalog_item_id": it.itemordered_catalogitemid,
-                    "product_name": it.itemordered_productname,
-                    "unit_price": float(it.unitprice),
-                    "units": it.units,
-                }
-                for it in order.items
-            ],
-            "shipping": {
-                "street": order.shiptoaddress_street,
-                "city": order.shiptoaddress_city,
-                "state": order.shiptoaddress_state,
-                "country": order.shiptoaddress_country,
-                "zip": order.shiptoaddress_zipcode,
-            },
-            "total": float(total_amount),
-        },
-    }
-    asyncio.create_task(events.publish_event("order.created", payload))
+    # Publish event to confirm stock
+    confirm_items = [
+        schemas.EventItem(
+            itemId=it.itemordered_catalogitemid,
+            amount=it.units
+        )
+        for it in order.items
+    ]
+    confirm_payload = [item.model_dump() for item in confirm_items]
+    asyncio.create_task(safe_publish("catalog_item_stock.confirm", confirm_payload))
 
     # Return OrderRead
     return schemas.OrderRead(
@@ -102,6 +89,12 @@ async def create_order(db: AsyncSession, order_in: schemas.OrderCreate) -> schem
         ],
         total=float(total_amount)
     )
+
+async def safe_publish(routing_key, payload):
+    try:
+        await events.publisher.publish(routing_key, payload)
+    except Exception as e:
+        logger.error(f"Failed to publish event '{routing_key}': {e}")
 
 # -----------------------
 # Get single order by ID

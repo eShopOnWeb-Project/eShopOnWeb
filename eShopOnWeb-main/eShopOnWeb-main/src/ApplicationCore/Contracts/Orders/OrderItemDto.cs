@@ -22,4 +22,8 @@ public class OrderItemDto
 
     [JsonPropertyName("units")]
     public int Units { get; set; }
+
+    public OrderItemDto()
+    {
+    }
 }

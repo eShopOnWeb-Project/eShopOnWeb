@@ -1,0 +1,21 @@
+# This is a generated file. Not intended for manual editing.
+services:
+  basket-api:
+    build:
+      context: "C:\\Users\\cecil\\IdeaProjects\\ucl\\eShopOnWeb\\BasketService\\BasketService"
+      dockerfile: "Dockerfile"
+      target: "base"
+    command: []
+    entrypoint:
+    - "dotnet"
+    - "/app/bin/Debug/net8.0/BasketService.dll"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    image: "basketservice:dev"
+    ports: []
+    volumes:
+    - "C:\\Users\\cecil\\IdeaProjects\\ucl\\eShopOnWeb\\BasketService\\BasketService:/app:rw"
+    - "C:\\Users\\cecil\\IdeaProjects\\ucl\\eShopOnWeb\\BasketService:/src:rw"
+    - "C:\\Users\\cecil\\.nuget\\packages:/root/.nuget/packages"
+    working_dir: "/app"
