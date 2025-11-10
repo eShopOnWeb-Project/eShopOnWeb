@@ -1,6 +1,7 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
-namespace Microsoft.eShopWeb.Web.DTOs;
+namespace Microsoft.eShopWeb.ApplicationCore.DTOs;
 
 public class ListPagedCatalogItemResponse
 {

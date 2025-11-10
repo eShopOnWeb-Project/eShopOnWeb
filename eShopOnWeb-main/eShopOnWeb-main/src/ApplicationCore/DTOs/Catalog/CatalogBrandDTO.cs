@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Microsoft.eShopWeb.Web.DTOs;
+namespace Microsoft.eShopWeb.ApplicationCore.DTOs;
 
 public class CatalogBrandDTO
 {

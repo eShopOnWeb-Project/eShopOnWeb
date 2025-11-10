@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.eShopWeb.ApplicationCore.DTOs.RabbitMQ;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Exceptions;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
@@ -45,7 +46,7 @@ public class CheckoutModel : PageModel
 
         try
         {
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            var rpcItems = BasketModel.Items.Select(i => new Item
             {
                 itemId = i.CatalogItemId,
                 amount = i.Quantity
@@ -107,7 +108,7 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            var rpcItems = BasketModel.Items.Select(i => new Item
             {
                 itemId = i.CatalogItemId,
                 amount = i.Quantity
