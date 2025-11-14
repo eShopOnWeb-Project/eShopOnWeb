@@ -40,7 +40,8 @@ services:
       eshop-on-web-net:
         aliases:
           - order
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
+          - orders
+    command: python -m app.server
 
 networks:
   eshop-on-web-net:

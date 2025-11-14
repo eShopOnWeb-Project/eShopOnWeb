@@ -9,8 +9,8 @@ services:
     volumes:
       - dev-secrets:/secrets:ro
     environment:
-      ORDERS_BACKENDS:  http://order:8001
-      CATALOG_BACKENDS: http://catalog-api:8000
+      ORDERS_BACKENDS:  https://orders:8001
+      CATALOG_BACKENDS: https://catalog:8000
       ISSUER: eshop-gateway
       KEY_ID: gw-key-1
       JWT_PRIVATE_PATH: /secrets/jwt/gateway-jwt-private.pem

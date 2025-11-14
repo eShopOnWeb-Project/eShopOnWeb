@@ -32,19 +32,20 @@ services:
     environment:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://cataloguser:catalogpass@catalog-db:5432/catalogdb
-      TLS_CERT: /secrets/services/orders/server.crt
-      TLS_KEY:  /secrets/services/orders/server.key
+      TLS_CERT: /secrets/services/catalog/server.crt
+      TLS_KEY:  /secrets/services/catalog/server.key
       TLS_CA:   /secrets/ca/ca.crt
       JWT_PUBLIC_PEM: /secrets/jwt/gateway-jwt-public.pem
     expose: [ "8000" ]
     volumes:
       - .:/app
       - dev-secrets:/secrets:ro
-    command: /bin/sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: /bin/sh -c "alembic upgrade head && python -m app.server"
     networks:
       eshop-on-web-net:
         aliases:
           - catalog_api
+          - catalog
 
 volumes:
   catalog_data:

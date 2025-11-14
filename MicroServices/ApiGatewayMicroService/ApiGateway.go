@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/tls"
+	"crypto/x509"
 )
 
 // --------- Service & Load Balancing ---------
@@ -88,6 +90,62 @@ func dropHopByHop(h http.Header) {
 }
 
 func defaultTransport() http.RoundTripper {
+	certPath := strings.TrimSpace(os.Getenv("MTLS_CLIENT_CERT"))
+	keyPath := strings.TrimSpace(os.Getenv("MTLS_CLIENT_KEY"))
+	caPath := strings.TrimSpace(os.Getenv("MTLS_SERVICE_CA"))
+
+	var tlsConfig *tls.Config
+
+	if certPath != "" && keyPath != "" {
+		clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			log.Fatalf("failed to load client certificate %s / %s: %v", certPath, keyPath, err)
+		}
+
+		// populate Leaf so we can log friendly info later
+		if len(clientCert.Certificate) > 0 {
+			if leaf, err := x509.ParseCertificate(clientCert.Certificate[0]); err == nil {
+				clientCert.Leaf = leaf
+			}
+		}
+
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{clientCert},
+		}
+	}
+
+	if caPath != "" {
+		caData, err := os.ReadFile(caPath)
+		if err != nil {
+			log.Fatalf("failed to read service CA %s: %v", caPath, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caData) {
+			log.Fatalf("service CA %s contained no certificates", caPath)
+		}
+
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		tlsConfig.RootCAs = pool
+	}
+
+	if tlsConfig != nil {
+		tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+			serverCN := ""
+			if len(cs.PeerCertificates) > 0 {
+				serverCN = cs.PeerCertificates[0].Subject.CommonName
+			}
+			clientCN := ""
+			if len(tlsConfig.Certificates) > 0 && tlsConfig.Certificates[0].Leaf != nil {
+				clientCN = tlsConfig.Certificates[0].Leaf.Subject.CommonName
+			}
+			log.Printf("mTLS handshake OK (client=%s → server=%s)", clientCN, serverCN)
+			return nil
+		}
+	}
+
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -98,6 +156,7 @@ func defaultTransport() http.RoundTripper {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:      tlsConfig,
 	}
 }
 
@@ -206,11 +265,11 @@ func withCORS(next http.Handler, allowedOrigin string) http.Handler {
 func main() {
 	catalogBackends := parseBackendList(
 		os.Getenv("CATALOG_BACKENDS"),
-		"http://catalog-api:8000",
+		"https://catalog:8000",
 	)
 	ordersBackends := parseBackendList(
 		os.Getenv("ORDERS_BACKENDS"),
-		"http://orders-api:8001",
+		"https://orders:8001",
 	)
 
 	services := map[string]*BackendService{
