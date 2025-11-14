@@ -1,0 +1,23 @@
+services:
+  certgen:
+    image: alpine:3.20
+    command:
+      - sh
+      - -lc
+      - >
+        apk add --no-cache openssl bash >/dev/null &&
+        cp /work/gen-secrets.sh /tmp/gen-secrets.sh &&
+        sed -i 's/\r$//' /tmp/gen-secrets.sh &&
+        chmod +x /tmp/gen-secrets.sh &&
+        /tmp/gen-secrets.sh
+    volumes:
+      - dev-secrets:/secrets
+      - ./gen-secrets.sh:/work/gen-secrets.sh:ro   # mount file read-only; we copy it
+    restart: "no"
+    networks:
+      - eshop-on-web-net
+
+volumes:
+  dev-secrets:
+    name: eshop-dev-secrets
+    driver: local

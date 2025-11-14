@@ -1,6 +1,4 @@
-networks:
-  eshop-on-web-net:
-    external: true
+
 
 services:
   catalog-db:
@@ -20,24 +18,38 @@ services:
       eshop-on-web-net:
         aliases:
           - catalog_db
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
 
   catalog-api:
     build: .
     depends_on:
       catalog-db:
         condition: service_healthy
+      certgen:
+        condition: service_completed_successfully
     environment:
       API_PORT: 8000
       DATABASE_URL: postgresql+asyncpg://cataloguser:catalogpass@catalog-db:5432/catalogdb
-    ports:
-      - "8000:8000"
+      TLS_CERT: /secrets/services/catalog/server.crt
+      TLS_KEY:  /secrets/services/catalog/server.key
+      TLS_CA:   /secrets/ca/ca.crt
+      JWT_PUBLIC_PEM: /secrets/jwt/gateway-jwt-public.pem
+    expose: [ "8000" ]
     volumes:
       - .:/app
-    command: /bin/sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      - dev-secrets:/secrets:ro
+    command: /bin/sh -c "alembic upgrade head && python -m app.server"
     networks:
       eshop-on-web-net:
         aliases:
           - catalog_api
+          - catalog
 
 volumes:
   catalog_data:
+
+networks:
+  eshop-on-web-net:
+    external: true

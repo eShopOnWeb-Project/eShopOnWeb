@@ -1,4 +1,6 @@
+# docker-compose.yml  (root)
 include:
+  - compose.common.yml
   - docker-compose-adminPages.yml
   - Monitoring/docker-compose-grafana.yml
   - eShopOnWeb-main/eShopOnWeb-main/docker-compose.yml

@@ -13,14 +13,14 @@ public class CatalogApiClient : ICatalogApiClient
 {
     private readonly HttpClient _httpClient;
 
-    public CatalogApiClient(HttpClient httpClient)
+    public CatalogApiClient(IHttpClientFactory factory)
     {
-        _httpClient = httpClient;
+        _httpClient = factory.CreateClient("Gateway");
     }
 
     public async Task<List<CatalogTypeDTO>> GetCatalogTypesAsync()
     {
-        var response = await _httpClient.GetAsync("types");
+        var response = await _httpClient.GetAsync("/catalog/types");
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
@@ -31,7 +31,7 @@ public class CatalogApiClient : ICatalogApiClient
 
     public async Task<List<CatalogBrandDTO>> GetBrandsAsync()
     {
-        var response = await _httpClient.GetAsync("brands");
+        var response = await _httpClient.GetAsync("/catalog/brands");
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
@@ -43,7 +43,7 @@ public class CatalogApiClient : ICatalogApiClient
 
     public async Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync()
     {
-        var response = await _httpClient.GetAsync("items");
+        var response = await _httpClient.GetAsync("/catalog/items");
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
@@ -55,7 +55,7 @@ public class CatalogApiClient : ICatalogApiClient
     public async Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync(
         int pageIndex, int pageSize, int? brandId = null, int? typeId = null)
     {
-        var url = $"items?pageSize={pageSize}&pageIndex={pageIndex}";
+        var url = $"/catalog/items?pageSize={pageSize}&pageIndex={pageIndex}";
 
         if (brandId.HasValue) url += $"&catalogBrandId={brandId.Value}";
         if (typeId.HasValue) url += $"&catalogTypeId={typeId.Value}";
@@ -71,7 +71,7 @@ public class CatalogApiClient : ICatalogApiClient
 
     public async Task<CatalogItemDTO> GetCatalogItemAsync(int catalogItemId)
     {
-        var url = $"items/{catalogItemId}";
+        var url = $"/catalog/items/{catalogItemId}";
 
         var response = await _httpClient.GetAsync(url);
         response.EnsureSuccessStatusCode();
@@ -84,7 +84,7 @@ public class CatalogApiClient : ICatalogApiClient
 
     public async Task<CatalogItemDTO> UpdateCatalogItemAsync(CatalogItemDTO item)
     {
-        var response = await _httpClient.PutAsJsonAsync("items", item);
+        var response = await _httpClient.PutAsJsonAsync("/catalog/items", item);
 
         response.EnsureSuccessStatusCode();
 

@@ -13,6 +13,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/tls"
+	"crypto/x509"
+	"github.com/golang-jwt/jwt/v5"
+	"fmt"
 )
 
 // --------- Service & Load Balancing ---------
@@ -61,7 +65,6 @@ func parseBackendList(envVal string, defaults ...string) []*url.URL {
 	return urls
 }
 
-// join URL paths without double slashes
 func joinPaths(a, b string) string {
 	as := strings.HasSuffix(a, "/")
 	bp := strings.HasPrefix(b, "/")
@@ -78,7 +81,6 @@ func joinPaths(a, b string) string {
 func dropHopByHop(h http.Header) {
 	hh := []string{"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate",
 		"Proxy-Authorization", "TE", "Trailers", "Transfer-Encoding", "Upgrade"}
-	// Also remove per-connection headers listed in Connection
 	for _, f := range h["Connection"] {
 		for _, sf := range strings.Split(f, ",") {
 			h.Del(textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(sf)))
@@ -90,6 +92,62 @@ func dropHopByHop(h http.Header) {
 }
 
 func defaultTransport() http.RoundTripper {
+	certPath := strings.TrimSpace(os.Getenv("MTLS_CLIENT_CERT"))
+	keyPath := strings.TrimSpace(os.Getenv("MTLS_CLIENT_KEY"))
+	caPath := strings.TrimSpace(os.Getenv("MTLS_SERVICE_CA"))
+
+	var tlsConfig *tls.Config
+
+	if certPath != "" && keyPath != "" {
+		clientCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			log.Fatalf("failed to load client certificate %s / %s: %v", certPath, keyPath, err)
+		}
+
+		// populate Leaf so we can log friendly info later
+		if len(clientCert.Certificate) > 0 {
+			if leaf, err := x509.ParseCertificate(clientCert.Certificate[0]); err == nil {
+				clientCert.Leaf = leaf
+			}
+		}
+
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{clientCert},
+		}
+	}
+
+	if caPath != "" {
+		caData, err := os.ReadFile(caPath)
+		if err != nil {
+			log.Fatalf("failed to read service CA %s: %v", caPath, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caData) {
+			log.Fatalf("service CA %s contained no certificates", caPath)
+		}
+
+		if tlsConfig == nil {
+			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		tlsConfig.RootCAs = pool
+	}
+
+	if tlsConfig != nil {
+		tlsConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+			serverCN := ""
+			if len(cs.PeerCertificates) > 0 {
+				serverCN = cs.PeerCertificates[0].Subject.CommonName
+			}
+			clientCN := ""
+			if len(tlsConfig.Certificates) > 0 && tlsConfig.Certificates[0].Leaf != nil {
+				clientCN = tlsConfig.Certificates[0].Leaf.Subject.CommonName
+			}
+			log.Printf("mTLS handshake OK (client=%s → server=%s)", clientCN, serverCN)
+			return nil
+		}
+	}
+
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -100,7 +158,89 @@ func defaultTransport() http.RoundTripper {
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:      tlsConfig,
 	}
+}
+
+// -------------- Jwt ----------- Middleware
+
+var secretKey = []byte("en_meget_lang_og_hemmelig_nøgle") // Samme som i webapp
+
+func jwtMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        auth := r.Header.Get("Authorization")
+        log.Printf("Authorization header: %q", auth)
+
+        if !strings.HasPrefix(auth, "Bearer ") {
+            log.Println("Authorization header mangler 'Bearer ' prefix")
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+        tokenStr := strings.TrimPrefix(auth, "Bearer ")
+        log.Printf("Token extracted: %s", tokenStr)
+
+        token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+                errMsg := fmt.Sprintf("unexpected signing method: %v", token.Header["alg"])
+                log.Println(errMsg)
+                return nil, fmt.Errorf(errMsg)
+            }
+            return secretKey, nil
+        })
+
+        if err != nil {
+            log.Printf("Fejl ved token parsing: %v", err)
+            http.Error(w, "invalid token", http.StatusUnauthorized)
+            return
+        }
+        if !token.Valid {
+            log.Println("Token er ugyldigt")
+            http.Error(w, "invalid token", http.StatusUnauthorized)
+            return
+        }
+
+        claims, ok := token.Claims.(jwt.MapClaims)
+        if !ok {
+            log.Println("Token claims kunne ikke parses til jwt.MapClaims")
+            http.Error(w, "invalid claims", http.StatusUnauthorized)
+            return
+        }
+
+        log.Printf("Claims: %+v", claims)
+
+        // Tjek audience claim
+        audClaim, audExists := claims["aud"]
+        if !audExists {
+            log.Println("Claim 'aud' mangler")
+            http.Error(w, "invalid audience", http.StatusUnauthorized)
+            return
+        }
+
+        validAud := false
+        switch v := audClaim.(type) {
+        case string:
+            validAud = (v == "gateway_api")
+        case []interface{}:
+            for _, a := range v {
+                if s, ok := a.(string); ok && s == "gateway_api" {
+                    validAud = true
+                    break
+                }
+            }
+        default:
+            log.Printf("Claim 'aud' har uventet type: %T", v)
+        }
+
+        if !validAud {
+            log.Printf("Ugyldig audience: %v", audClaim)
+            http.Error(w, "invalid audience", http.StatusUnauthorized)
+            return
+        }
+
+        log.Println("JWT token valideret OK, sender videre til næste handler")
+        next.ServeHTTP(w, r)
+    })
 }
 
 // --------- Reverse Proxy Builder ---------
@@ -127,7 +267,6 @@ func singleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			log.Printf("proxy error: %v", err)
 			http.Error(w, "backend service unavailable", http.StatusBadGateway)
 		},
-		BufferPool: nil, // default
 	}
 }
 
@@ -140,7 +279,6 @@ func forwardToService(w http.ResponseWriter, r *http.Request, svc *BackendServic
 		return
 	}
 
-	// Build final request path/query
 	outPath := joinPaths(target.Path, strippedPath)
 	outQuery := r.URL.RawQuery
 
@@ -158,19 +296,14 @@ func forwardToService(w http.ResponseWriter, r *http.Request, svc *BackendServic
 		}(),
 	)
 
-	// Prepare clone for proxy (to avoid mutating the original)
 	r2 := r.Clone(r.Context())
 	r2.URL.Path = outPath
-	r2.URL.RawPath = "" // let Go encode
 	r2.URL.RawQuery = outQuery
-
-	// Clean inbound hop-by-hop headers
 	dropHopByHop(r2.Header)
 	if r2.Body == nil {
 		r2.Body = http.NoBody
 	}
 
-	// Use a per-target proxy instance
 	proxy := singleHostReverseProxy(target)
 	proxy.ServeHTTP(w, r2)
 }
@@ -179,29 +312,47 @@ func stripFirstSegment(path, segment string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	// Remove exactly the first "/segment"
 	stripped := strings.TrimPrefix(path, "/"+segment)
 	if stripped == "" {
 		return "/"
 	}
-	// Ensure leading slash
 	if !strings.HasPrefix(stripped, "/") {
 		stripped = "/" + stripped
 	}
 	return stripped
 }
 
+// --------- CORS Middleware ---------
+
+func withCORS(next http.Handler, allowedOrigin string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == allowedOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "authorization, content-type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+			w.Header().Set("Access-Control-Expose-Headers", "content-type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // --------- Main ---------
 
 func main() {
-
 	catalogBackends := parseBackendList(
 		os.Getenv("CATALOG_BACKENDS"),
-		"http://catalog-api:8000",
+		"https://catalog:8000",
 	)
 	ordersBackends := parseBackendList(
 		os.Getenv("ORDERS_BACKENDS"),
-		"http://orders-api:8001",
+		"https://orders:8001",
 	)
 
 	services := map[string]*BackendService{
@@ -209,7 +360,6 @@ func main() {
 		"orders":  {Name: "orders", Instances: ordersBackends},
 	}
 
-	// Factory for path-based services
 	handler := func(serviceName string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			svc := services[serviceName]
@@ -222,21 +372,23 @@ func main() {
 		}
 	}
 
-	// Routes (path-prefix routing)
-	http.HandleFunc("/catalog/", handler("catalog"))
-	http.HandleFunc("/orders/", handler("orders"))
-
-	// (Optional) root landing + health
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/catalog/", handler("catalog"))
+	mux.HandleFunc("/orders/", handler("orders"))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "gateway: try /catalog/... or /orders/...\n")
 	})
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
 		io.WriteString(w, "ok")
 	})
 
+	adminOrigin := "http://localhost:5106"
 	addr := ":8080"
-	log.Printf("API Gateway listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Printf("API Gateway listening on %s (CORS allowed from %s)", addr, adminOrigin)
+
+	securedMux := jwtMiddleware(mux)
+
+	log.Fatal(http.ListenAndServe(addr, withCORS(securedMux, adminOrigin)))
 }

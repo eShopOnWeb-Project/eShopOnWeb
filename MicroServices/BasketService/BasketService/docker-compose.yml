@@ -15,6 +15,9 @@
       retries: 5
     networks:
       - eshop-on-web-net
+    depends_on:
+      certgen:
+        condition: service_completed_successfully
 
   basket-api:
     container_name: basket-api
@@ -24,11 +27,18 @@
     depends_on:
       basket-db:
         condition: service_healthy
+      certgen:
+        condition: service_completed_successfully
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:5004
       ConnectionStrings__Default: Host=basket-db;Port=5432;Database=basketdb;Username=basketuser;Password=basketpass
-    ports:
-      - "5004:5004"
+      TLS_CERT: /secrets/services/orders/server.crt
+      TLS_KEY:  /secrets/services/orders/server.key
+      TLS_CA:   /secrets/ca/ca.crt
+      JWT_PUBLIC_PEM: /secrets/jwt/gateway-jwt-public.pem
+    volumes:
+      - dev-secrets:/secrets:ro
+    expose: [ "5004" ]
     networks:
       eshop-on-web-net:
         aliases:
@@ -38,5 +48,7 @@ networks:
   eshop-on-web-net:
     external: true
 
+
 volumes:
   basket_data:
+

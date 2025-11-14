@@ -13,13 +13,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Catalog Microservice", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=["*"],          
+#    allow_credentials=False,     
+#    allow_methods=["*"],
+#    allow_headers=["*"],         
+#)
 
 app.include_router(catalog_item_router)
 app.include_router(catalog_brand_router)

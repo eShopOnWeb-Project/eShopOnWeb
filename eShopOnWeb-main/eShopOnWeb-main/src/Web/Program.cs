@@ -1,4 +1,5 @@
-﻿using System.Net.Mime;
+﻿using System.Diagnostics;
+using System.Net.Mime;
 using Ardalis.ListStartupServices;
 using Azure.Identity;
 using BlazorAdmin;
@@ -40,14 +41,9 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
-// Register HttpClient for IOrderServiceClient
-builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =>
-{
-    client.BaseAddress = new Uri("http://localhost:8000");
-});
 
 // Register OrderService
-builder.Services.AddScoped<IOrderService, OrderService>();
+
 
 builder.Services.AddScoped<IBasketClient, BasketClient>();
 
@@ -85,6 +81,23 @@ else{
         options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
     });
 }
+
+var secretKey = "en_meget_lang_og_hemmelig_nøgle"; // Samme som i TokenService
+
+builder.Services.AddSingleton(new TokenService(secretKey));
+
+builder.Services.AddHttpClient("Gateway", client =>
+{
+    client.BaseAddress = new Uri("http://gateway:8080");
+})
+.AddHttpMessageHandler(sp =>
+{
+    var tokenService = sp.GetRequiredService<TokenService>();
+    var token = tokenService.GenerateToken();
+
+    return new DelegatingHandlerImpl(token);
+});
+
 
 //authentication virkede ik i docker så prøver lige med denne
 if (builder.Environment.EnvironmentName == "Docker")
@@ -284,3 +297,25 @@ app.MapHub<StockHub>("/stockhub");
 
 app.Logger.LogInformation("LAUNCHING");
 app.Run();
+
+
+
+public class DelegatingHandlerImpl : DelegatingHandler
+{
+    private readonly string _token;
+    public DelegatingHandlerImpl(string token) => _token = token;
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"Sending request to {request.RequestUri}");
+        Console.WriteLine($"Authorization: Bearer {_token}");
+
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
+
+        var response = await base.SendAsync(request, cancellationToken);
+
+        Console.WriteLine($"Response status code: {response.StatusCode}");
+
+        return response;
+    }
+}

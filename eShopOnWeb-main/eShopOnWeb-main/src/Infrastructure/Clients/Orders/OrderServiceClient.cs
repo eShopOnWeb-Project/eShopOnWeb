@@ -12,7 +12,8 @@ public class OrderServiceClient : IOrderServiceClient
 {
     private readonly HttpClient _httpClient;
 
-    public OrderServiceClient(HttpClient httpClient, IConfiguration configuration)
+
+    public OrderServiceClient(IConfiguration configuration, IHttpClientFactory factory)
     {
         var baseUrl = configuration["baseUrls:ordersMicroservice"];
 
@@ -23,8 +24,8 @@ public class OrderServiceClient : IOrderServiceClient
 
         if (!baseUrl.EndsWith("/")) baseUrl += "/";
 
-        httpClient.BaseAddress = new Uri(baseUrl);
-        _httpClient = httpClient;
+        _httpClient = factory.CreateClient("Gateway");
+        _httpClient.BaseAddress = new Uri(baseUrl);
     }
 
     public async Task CreateOrderAsync(CreateOrderDto order) =>
