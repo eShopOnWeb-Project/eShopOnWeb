@@ -20,6 +20,9 @@ public static class ConfigureWebServices
         var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 
         services.AddScoped<ICatalogApiClient, CatalogApiClient>();
+        services.AddScoped<IOrderServiceClient, OrderServiceClient>();
+
+        services.AddScoped<IOrderService, OrderService>();
 
         services.AddScoped<CatalogViewModelService>();
         services.AddScoped<ICatalogViewModelService, CachedCatalogViewModelService>();

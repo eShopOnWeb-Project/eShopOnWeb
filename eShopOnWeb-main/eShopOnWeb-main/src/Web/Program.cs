@@ -41,14 +41,9 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
-// Register HttpClient for IOrderServiceClient
-builder.Services.AddHttpClient<IOrderServiceClient, OrderServiceClient>(client =>
-{
-    client.BaseAddress = new Uri("http://localhost:8000");
-});
 
 // Register OrderService
-builder.Services.AddScoped<IOrderService, OrderService>();
+
 
 builder.Services.AddScoped<IBasketClient, BasketClient>();
 
@@ -102,6 +97,7 @@ builder.Services.AddHttpClient("Gateway", client =>
 
     return new DelegatingHandlerImpl(token);
 });
+
 
 //authentication virkede ik i docker så prøver lige med denne
 if (builder.Environment.EnvironmentName == "Docker")
