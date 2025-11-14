@@ -44,18 +44,13 @@ EOF
 }
 
 # --- Per-service server certs (names must match service names)
-for svc in orders catalog basket inventory storage; do
+for svc in orders catalog; do
   gen_server "$svc"
 done
 
 # --- Gateway client cert (for mTLS to services)
 gen_client gateway
 
-# --- JWT keypair (RSA so .NET is easy) ---
-if [[ ! -f "$SECRETS/jwt/gateway-jwt-private.pem" ]]; then
-  openssl genrsa -out "$SECRETS/jwt/gateway-jwt-private.pem" 2048
-  openssl rsa -in "$SECRETS/jwt/gateway-jwt-private.pem" -pubout -out "$SECRETS/jwt/gateway-jwt-public.pem"
-fi
 
 chmod 600 "$SECRETS"/**/*.key || true
 echo "✅ dev secrets ready in $SECRETS"
