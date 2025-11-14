@@ -32,10 +32,13 @@ services:
     depends_on:
       order-db:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       certgen:
         condition: service_completed_successfully
     volumes:
       - dev-secrets:/secrets:ro
+
     networks:
       eshop-on-web-net:
         aliases:

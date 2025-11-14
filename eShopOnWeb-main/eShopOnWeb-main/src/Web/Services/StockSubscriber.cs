@@ -2,14 +2,14 @@
 using System.Text.Json;
 using BlazorShared.Models;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.eShopWeb.Web.Cache;
+using Microsoft.eShopWeb.ApplicationCore.DTOs.RabbitMQ;
+using Microsoft.eShopWeb.Infrastructure.Caching;
 using Microsoft.eShopWeb.Web.Hubs;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using static IRabbitMqService;
 
-namespace Microsoft.eShopWeb.Web.Subscribers;
+namespace Microsoft.eShopWeb.Web.Services;
 
 public class StockSubscriber : BackgroundService
 {

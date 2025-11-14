@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.eShopWeb.ApplicationCore.DTOs.RabbitMQ;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Exceptions;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
@@ -28,7 +29,6 @@ public class CheckoutModel : PageModel
         IBasketClient basketClient,
         IAppLogger<CheckoutModel> logger,
         IRabbitMqService rabbitMqService)
-
     {
         _signInManager = signInManager;
         _orderService = orderService;
@@ -46,7 +46,7 @@ public class CheckoutModel : PageModel
 
         try
         {
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            var rpcItems = BasketModel.Items.Select(i => new Item
             {
                 itemId = i.CatalogItemId,
                 amount = i.Quantity
@@ -55,7 +55,7 @@ public class CheckoutModel : PageModel
             var response = await _rabbitMqService.ReserveAsync(rpcItems);
             if (!response.success)
             {
-                TempData["Error"] = $"Reservation failed: {response.reason}";
+                TempData["Error"] = $"Reservation failed: {response.reason}          [HELP: go to admin page to restock more items ]";
                 return RedirectToPage("/Basket/Index");
             }
             return Page();
@@ -80,18 +80,11 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
-            {
-                itemId = i.CatalogItemId,
-                amount = i.Quantity
-            }).ToList();
-
             var updateModel = items.ToDictionary(b => b.Id.ToString(), b => b.Quantity);
             
             await _basketClient.SetQuantities(BasketModel.Id, updateModel);
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketClient.DeleteBasketAsync(BasketModel.Id);
-            await _rabbitMqService.SendConfirmAsync(rpcItems);
         }
         catch (EmptyBasketOnCheckoutException emptyBasketOnCheckoutException)
         {
@@ -115,7 +108,7 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
-            var rpcItems = BasketModel.Items.Select(i => new IRabbitMqService.Item
+            var rpcItems = BasketModel.Items.Select(i => new Item
             {
                 itemId = i.CatalogItemId,
                 amount = i.Quantity

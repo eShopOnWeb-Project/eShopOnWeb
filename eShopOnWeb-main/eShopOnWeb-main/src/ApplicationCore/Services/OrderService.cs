@@ -12,17 +12,17 @@ namespace Microsoft.eShopWeb.ApplicationCore.Services;
 public class OrderService : IOrderService
 {
     private readonly IOrderServiceClient _orderServiceClient;
-    private readonly IRepository<CatalogItem> _itemRepository;
+    private readonly ICatalogApiClient _catalogApiClient;
     private readonly IUriComposer _uriComposer;
     private readonly IBasketClient _basketClient;
 
     public OrderService(
-        IRepository<CatalogItem> itemRepository,
+        ICatalogApiClient catalogApiClient,
         IUriComposer uriComposer,
         IOrderServiceClient orderServiceClient, 
         IBasketClient basketClient)
     {
-        _itemRepository = itemRepository;
+        _catalogApiClient = catalogApiClient;
         _uriComposer = uriComposer;
         _orderServiceClient = orderServiceClient;
         _basketClient = basketClient;
@@ -33,7 +33,12 @@ public class OrderService : IOrderService
         var basket = await _basketClient.GetBasket(basketId);
         if (basket == null || basket.Items.Count == 0) throw new InvalidOperationException("Basket is empty or not found.");
 
-        var catalogItems = await _itemRepository.ListAsync(new CatalogItemsSpecification(basket.Items.Select(i => i.CatalogItemId).ToArray()));
+        var catalogItemsResponse = await _catalogApiClient.GetCatalogItemsAsync();
+        var catalogItems = catalogItemsResponse.CatalogItems;
+        var basketItemIds = basket.Items.Select(i => i.CatalogItemId).ToHashSet();
+        catalogItems = catalogItems
+            .Where(ci => basketItemIds.Contains(ci.Id))
+            .ToList();
 
         var items = basket.Items.Select(basketItem =>
         {

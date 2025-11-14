@@ -19,18 +19,19 @@ using Microsoft.eShopWeb;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Services;
+using Microsoft.eShopWeb.Infrastructure.Caching;
 using Microsoft.eShopWeb.Infrastructure.Clients;
 using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Identity;
 using Microsoft.eShopWeb.Infrastructure.Services;
 using Microsoft.eShopWeb.Web;
-using Microsoft.eShopWeb.Web.Cache;
 using Microsoft.eShopWeb.Web.Configuration;
 using Microsoft.eShopWeb.Web.Features.MyOrders;
 using Microsoft.eShopWeb.Web.HealthChecks;
 using Microsoft.eShopWeb.Web.Hubs;
-using Microsoft.eShopWeb.Web.Subscribers;
+using Microsoft.eShopWeb.Web.Interfaces;
+using Microsoft.eShopWeb.Web.Services;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -54,6 +55,16 @@ builder.Services.AddScoped<IBasketClient, BasketClient>();
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<GetMyOrdersHandler>();
+});
+
+// Configure RabbitMQ options from appsettings.json
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMQ"));
+
+// Register RabbitMqService
+builder.Services.AddSingleton<IRabbitMqService>(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+    return new RabbitMqService(options);
 });
 
 if (builder.Environment.IsDevelopment() || builder.Environment.EnvironmentName == "Docker"){
@@ -100,17 +111,6 @@ if (builder.Environment.EnvironmentName == "Docker")
         .SetApplicationName("eshopweb");
 }
 
-// Configure RabbitMQ options from appsettings.json
-builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMQ"));
-
-// Register RabbitMqService
-builder.Services.AddSingleton<IRabbitMqService>(sp =>
-{
-    var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
-    return new RabbitMqService(options);
-});
-
-builder.Services.AddSingleton<StockCache>();
 builder.Services.AddHostedService<StockSubscriber>();
 
 builder.Services.AddCookieSettings();

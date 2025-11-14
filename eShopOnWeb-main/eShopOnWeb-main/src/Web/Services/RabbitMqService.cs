@@ -1,11 +1,15 @@
-﻿using System.Text;
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using BlazorShared.Models;
-using Microsoft.eShopWeb.Web.Cache;
-using Microsoft.eShopWeb.Web.Pages.Basket;
+using Microsoft.eShopWeb.ApplicationCore.DTOs.RabbitMQ;
+using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using static IRabbitMqService;
+
+namespace Microsoft.eShopWeb.Web.Services;
 
 public class RabbitMqService : IRabbitMqService
 {
@@ -130,11 +134,6 @@ public class RabbitMqService : IRabbitMqService
             throw new TimeoutException("RPC request timed out waiting for response");
 
         return await tcs.Task;
-    }
-
-    public async Task SendConfirmAsync(List<Item> items)
-    {
-        await PublishAsync("catalog_item_stock.confirm", items);
     }
 
     public async Task SendRestockAsync(List<Item> items)

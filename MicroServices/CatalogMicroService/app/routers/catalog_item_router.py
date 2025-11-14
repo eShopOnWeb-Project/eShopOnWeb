@@ -11,7 +11,7 @@ router = APIRouter(prefix="/items", tags=["catalog-items"])
 base_url="http://localhost:8000"  
 
 # GET /items/{id}
-@router.get("{catalog_item_id}", response_model=CatalogItemDTO)
+@router.get("/{catalog_item_id}", response_model=CatalogItemDTO)
 async def get_catalog_item(catalog_item_id: int, db: AsyncSession = Depends(get_db)):
     repo = CatalogItemRepository(db)
     item = await repo.get_by_id(catalog_item_id)

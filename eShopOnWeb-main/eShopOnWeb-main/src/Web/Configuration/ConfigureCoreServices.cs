@@ -3,7 +3,6 @@ using Microsoft.eShopWeb.ApplicationCore.Services;
 using Microsoft.eShopWeb.Infrastructure.Data;
 using Microsoft.eShopWeb.Infrastructure.Logging;
 using Microsoft.eShopWeb.Infrastructure.Services;
-using Microsoft.eShopWeb.Web.APIClients;
 
 namespace Microsoft.eShopWeb.Web.Configuration;
 
