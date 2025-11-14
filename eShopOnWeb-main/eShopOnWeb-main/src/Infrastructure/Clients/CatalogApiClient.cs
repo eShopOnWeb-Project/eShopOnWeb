@@ -43,7 +43,7 @@ public class CatalogApiClient : ICatalogApiClient
 
     public async Task<ListPagedCatalogItemResponse> GetCatalogItemsAsync()
     {
-        var response = await _httpClient.GetAsync("items");
+        var response = await _httpClient.GetAsync("/catalog/items");
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
