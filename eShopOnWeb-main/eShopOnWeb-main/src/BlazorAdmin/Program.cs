@@ -24,9 +24,11 @@ var configSection = builder.Configuration.GetRequiredSection(BaseUrlConfiguratio
 builder.Services.Configure<BaseUrlConfiguration>(configSection);
 var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 
+
 builder.Services.AddScoped(sp => new HttpClient() { BaseAddress = new Uri(baseUrlConfig.WebBase) });
 
 builder.Services.AddScoped<ToastService>();
+builder.Services.AddScoped<GatewayTokenService>();
 builder.Services.AddScoped<HttpService>();
 
 builder.Services.AddBlazoredLocalStorage();
