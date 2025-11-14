@@ -18,10 +18,7 @@ public static class ConfigureWebServices
         services.Configure<BaseUrlConfiguration>(configSection);
         var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 
-        services.AddHttpClient<ICatalogApiClient, CatalogApiClient>((sp, client) =>
-        {
-            client.BaseAddress = new Uri(baseUrlConfig.CatalogMicroservice);
-        });
+        services.AddScoped<ICatalogApiClient, CatalogApiClient>();
 
         services.AddScoped<CatalogViewModelService>();
         services.AddScoped<ICatalogViewModelService, CachedCatalogViewModelService>();

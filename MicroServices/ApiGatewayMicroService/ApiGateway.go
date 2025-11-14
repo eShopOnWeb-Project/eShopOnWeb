@@ -15,6 +15,8 @@ import (
 	"time"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/golang-jwt/jwt/v5"
+	"fmt"
 )
 
 // --------- Service & Load Balancing ---------
@@ -160,6 +162,87 @@ func defaultTransport() http.RoundTripper {
 	}
 }
 
+// -------------- Jwt ----------- Middleware
+
+var secretKey = []byte("en_meget_lang_og_hemmelig_nøgle") // Samme som i webapp
+
+func jwtMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        auth := r.Header.Get("Authorization")
+        log.Printf("Authorization header: %q", auth)
+
+        if !strings.HasPrefix(auth, "Bearer ") {
+            log.Println("Authorization header mangler 'Bearer ' prefix")
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+        tokenStr := strings.TrimPrefix(auth, "Bearer ")
+        log.Printf("Token extracted: %s", tokenStr)
+
+        token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+                errMsg := fmt.Sprintf("unexpected signing method: %v", token.Header["alg"])
+                log.Println(errMsg)
+                return nil, fmt.Errorf(errMsg)
+            }
+            return secretKey, nil
+        })
+
+        if err != nil {
+            log.Printf("Fejl ved token parsing: %v", err)
+            http.Error(w, "invalid token", http.StatusUnauthorized)
+            return
+        }
+        if !token.Valid {
+            log.Println("Token er ugyldigt")
+            http.Error(w, "invalid token", http.StatusUnauthorized)
+            return
+        }
+
+        claims, ok := token.Claims.(jwt.MapClaims)
+        if !ok {
+            log.Println("Token claims kunne ikke parses til jwt.MapClaims")
+            http.Error(w, "invalid claims", http.StatusUnauthorized)
+            return
+        }
+
+        log.Printf("Claims: %+v", claims)
+
+        // Tjek audience claim
+        audClaim, audExists := claims["aud"]
+        if !audExists {
+            log.Println("Claim 'aud' mangler")
+            http.Error(w, "invalid audience", http.StatusUnauthorized)
+            return
+        }
+
+        validAud := false
+        switch v := audClaim.(type) {
+        case string:
+            validAud = (v == "gateway_api")
+        case []interface{}:
+            for _, a := range v {
+                if s, ok := a.(string); ok && s == "gateway_api" {
+                    validAud = true
+                    break
+                }
+            }
+        default:
+            log.Printf("Claim 'aud' har uventet type: %T", v)
+        }
+
+        if !validAud {
+            log.Printf("Ugyldig audience: %v", audClaim)
+            http.Error(w, "invalid audience", http.StatusUnauthorized)
+            return
+        }
+
+        log.Println("JWT token valideret OK, sender videre til næste handler")
+        next.ServeHTTP(w, r)
+    })
+}
+
 // --------- Reverse Proxy Builder ---------
 
 func singleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -301,10 +384,11 @@ func main() {
 		io.WriteString(w, "ok")
 	})
 
-	// Allow your Blazor Admin frontend origin here
 	adminOrigin := "http://localhost:5106"
-
 	addr := ":8080"
 	log.Printf("API Gateway listening on %s (CORS allowed from %s)", addr, adminOrigin)
-	log.Fatal(http.ListenAndServe(addr, withCORS(mux, adminOrigin)))
+
+	securedMux := jwtMiddleware(mux)
+
+	log.Fatal(http.ListenAndServe(addr, withCORS(securedMux, adminOrigin)))
 }
