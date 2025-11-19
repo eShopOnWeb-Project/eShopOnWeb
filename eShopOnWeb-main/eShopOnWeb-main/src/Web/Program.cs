@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Net.Mime;
+using System.Text;
 using Ardalis.ListStartupServices;
 using Azure.Identity;
 using BlazorAdmin;
@@ -82,7 +83,14 @@ else{
     });
 }
 
-var secretKey = "en_meget_lang_og_hemmelig_nøgle"; // Samme som i TokenService
+var secretKeyPath = "/secrets/jwt/secret.key";
+
+if (!File.Exists(secretKeyPath))
+{
+    throw new Exception($"Secret key not found at: {secretKeyPath}");
+}
+
+string secretKey = File.ReadAllText(secretKeyPath).Trim();
 
 builder.Services.AddSingleton(new TokenService(secretKey));
 
@@ -99,7 +107,6 @@ builder.Services.AddHttpClient("Gateway", client =>
 });
 
 
-//authentication virkede ik i docker så prøver lige med denne
 if (builder.Environment.EnvironmentName == "Docker")
 {
     builder.Services.AddDataProtection()

@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/textproto"
 	"net/url"
+	"bytes"
 	"os"
 	"strings"
 	"sync"
@@ -18,6 +19,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"fmt"
 )
+
+var secretKey []byte
 
 // --------- Service & Load Balancing ---------
 
@@ -164,21 +167,19 @@ func defaultTransport() http.RoundTripper {
 
 // -------------- Jwt ----------- Middleware
 
-var secretKey = []byte("en_meget_lang_og_hemmelig_nøgle") // Samme som i webapp
-
 func jwtMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         auth := r.Header.Get("Authorization")
         log.Printf("Authorization header: %q", auth)
 
         if !strings.HasPrefix(auth, "Bearer ") {
-            log.Println("Authorization header mangler 'Bearer ' prefix")
+            log.Println("Authorization header missing 'Bearer ' prefix")
             http.Error(w, "unauthorized", http.StatusUnauthorized)
             return
         }
 
         tokenStr := strings.TrimPrefix(auth, "Bearer ")
-        log.Printf("Token extracted: %s", tokenStr)
+        log.Printf("Extracted token: %s", tokenStr)
 
         token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
             if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -190,29 +191,29 @@ func jwtMiddleware(next http.Handler) http.Handler {
         })
 
         if err != nil {
-            log.Printf("Fejl ved token parsing: %v", err)
+            log.Printf("Error parsing token: %v", err)
             http.Error(w, "invalid token", http.StatusUnauthorized)
             return
         }
         if !token.Valid {
-            log.Println("Token er ugyldigt")
+            log.Println("Token is invalid")
             http.Error(w, "invalid token", http.StatusUnauthorized)
             return
         }
 
         claims, ok := token.Claims.(jwt.MapClaims)
         if !ok {
-            log.Println("Token claims kunne ikke parses til jwt.MapClaims")
+            log.Println("Token claims could not be parsed as jwt.MapClaims")
             http.Error(w, "invalid claims", http.StatusUnauthorized)
             return
         }
 
         log.Printf("Claims: %+v", claims)
 
-        // Tjek audience claim
+        // Audience check
         audClaim, audExists := claims["aud"]
         if !audExists {
-            log.Println("Claim 'aud' mangler")
+            log.Println("Missing 'aud' claim")
             http.Error(w, "invalid audience", http.StatusUnauthorized)
             return
         }
@@ -229,16 +230,16 @@ func jwtMiddleware(next http.Handler) http.Handler {
                 }
             }
         default:
-            log.Printf("Claim 'aud' har uventet type: %T", v)
+            log.Printf("Unexpected type for 'aud' claim: %T", v)
         }
 
         if !validAud {
-            log.Printf("Ugyldig audience: %v", audClaim)
+            log.Printf("Invalid audience: %v", audClaim)
             http.Error(w, "invalid audience", http.StatusUnauthorized)
             return
         }
 
-        log.Println("JWT token valideret OK, sender videre til næste handler")
+        log.Println("JWT validated successfully, forwarding request to next handler")
         next.ServeHTTP(w, r)
     })
 }
@@ -360,6 +361,7 @@ func main() {
 		"orders":  {Name: "orders", Instances: ordersBackends},
 	}
 
+
 	handler := func(serviceName string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			svc := services[serviceName]
@@ -387,6 +389,12 @@ func main() {
 	adminOrigin := "http://localhost:5106"
 	addr := ":8080"
 	log.Printf("API Gateway listening on %s (CORS allowed from %s)", addr, adminOrigin)
+
+	key, err := os.ReadFile("/secrets/jwt/secret.key")
+	if err != nil {
+	    log.Fatalf("failed to load secret key: %v", err)
+	}
+	secretKey = bytes.TrimSpace(key)
 
 	securedMux := jwtMiddleware(mux)
 

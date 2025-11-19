@@ -22,6 +22,7 @@ services:
       - ~/.aspnet/https:/root/.aspnet/https:ro
       - ~/.microsoft/usersecrets:/root/.microsoft/usersecrets:ro
       - ./keys:/keys
+      - dev-secrets:/secrets:ro
 
   sqlserver:
     image: mcr.microsoft.com/azure-sql-edge

@@ -51,6 +51,11 @@ done
 # --- Gateway client cert (for mTLS to services)
 gen_client gateway
 
+# --- App secret key ---
+if [[ ! -f "$SECRETS/jwt/secret.key" ]]; then
+  openssl rand -base64 32 > "$SECRETS/jwt/secret.key"
+fi
+
 
 chmod 600 "$SECRETS"/**/*.key || true
 echo "✅ dev secrets ready in $SECRETS"
