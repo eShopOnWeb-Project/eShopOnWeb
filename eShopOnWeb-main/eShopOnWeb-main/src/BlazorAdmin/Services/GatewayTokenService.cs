@@ -18,7 +18,7 @@ public class GatewayTokenService
         if (_cachedToken != null)
             return _cachedToken;
 
-        // Hent token fra server endpoint (server laver signering)
+        // Hent token fra server
         _cachedToken = await _httpClient.GetStringAsync("api/token/gateway");
         return _cachedToken;
     }
