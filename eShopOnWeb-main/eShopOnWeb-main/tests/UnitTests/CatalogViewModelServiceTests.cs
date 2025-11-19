@@ -108,8 +108,25 @@ public class CatalogViewModelServiceTests
             CatalogItems = catalogItems,
             PageCount = 2
         };
+
+        _catalogApiClient.GetBrandsAsync()
+            .Returns(Task.FromResult((List<CatalogBrandDTO>)new List<CatalogBrandDTO>
+            {
+                new CatalogBrandDTO { Id = 1, Name = "Brand1" },
+                new CatalogBrandDTO { Id = 2, Name = "Brand2" }
+            }));
+
+        _catalogApiClient.GetCatalogTypesAsync()
+            .Returns(Task.FromResult((List<CatalogTypeDTO>)new List<CatalogTypeDTO>
+            {
+                new CatalogTypeDTO { Id = 1, Type = "Type1" },
+                new CatalogTypeDTO { Id = 2, Type = "Type2" }
+            }));
+
         _catalogApiClient.GetCatalogItemsAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<int?>())
             .Returns(Task.FromResult(catalogResponse));
+
+
 
         _uriComposer.ComposePicUri(Arg.Any<string>()).Returns(call => $"http://cdn/{call.Arg<string>()}");
 
