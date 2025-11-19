@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using BlazorAdmin.Extensions;
 using BlazorShared;
 using BlazorShared.Models;
 using Microsoft.Extensions.Options;
@@ -26,75 +27,46 @@ public class HttpService
 
     }
 
-    public async Task<T> HttpGet<T>(string uri)
-        where T : class
+    public async Task<T> HttpGet<T>(string uri) where T : class
     {
-        var token = await _tokenService.GetTokenAsync();
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var request = new HttpRequestMessage(HttpMethod.Get, $"{_catalogApi}/{uri}");
+        var response = await SendRequestAsync(request);
+        if (response == null) return null;
 
-        var result = await _httpClient.GetAsync($"{_catalogApi}/{uri}");
-        if (!result.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        return await FromHttpResponseMessage<T>(result);
+        return await FromHttpResponseMessage<T>(response);
     }
 
-    public async Task<T> HttpDelete<T>(string uri, int id)
-        where T : class
+    public async Task<T> HttpDelete<T>(string uri, int id) where T : class
     {
-        var token = await _tokenService.GetTokenAsync();
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"{_catalogApi}/{uri}/{id}");
+        var response = await SendRequestAsync(request);
+        if (response == null) return null;
 
-        var result = await _httpClient.DeleteAsync($"{_catalogApi}/{uri}/{id}");
-        if (!result.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        return await FromHttpResponseMessage<T>(result);
+        return await FromHttpResponseMessage<T>(response);
     }
 
-    public async Task<T> HttpPost<T>(string uri, object dataToSend)
-        where T : class
+    public async Task<T> HttpPost<T>(string uri, object dataToSend) where T : class
     {
-        var token = await _tokenService.GetTokenAsync();
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        var content = ToJson(dataToSend);
-
-        var result = await _httpClient.PostAsync($"{_catalogApi}/{uri}", content);
-        if (!result.IsSuccessStatusCode)
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{_catalogApi}/{uri}")
         {
-            var exception = JsonSerializer.Deserialize<ErrorDetails>(await result.Content.ReadAsStringAsync(), new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            _toastService.ShowToast($"Error : {exception.Message}", ToastLevel.Error);
+            Content = ToJson(dataToSend)
+        };
+        var response = await SendRequestAsync(request);
+        if (response == null) return null;
 
-            return null;
-        }
-
-        return await FromHttpResponseMessage<T>(result);
+        return await FromHttpResponseMessage<T>(response);
     }
 
-    public async Task<T> HttpPut<T>(string uri, object dataToSend)
-        where T : class
+    public async Task<T> HttpPut<T>(string uri, object dataToSend) where T : class
     {
-        var token = await _tokenService.GetTokenAsync();
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        var content = ToJson(dataToSend);
-
-        var result = await _httpClient.PutAsync($"{_catalogApi}/{uri}", content);
-        if (!result.IsSuccessStatusCode)
+        var request = new HttpRequestMessage(HttpMethod.Put, $"{_catalogApi}/{uri}")
         {
-            _toastService.ShowToast("Error", ToastLevel.Error);
-            return null;
-        }
+            Content = ToJson(dataToSend)
+        };
+        var response = await SendRequestAsync(request);
+        if (response == null) return null;
 
-        return await FromHttpResponseMessage<T>(result);
+        return await FromHttpResponseMessage<T>(response);
     }
 
     private StringContent ToJson(object obj)
@@ -109,5 +81,37 @@ public class HttpService
             PropertyNameCaseInsensitive = true
         });
         return data;
+    }
+
+    private async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request)
+    {
+        var token = await _tokenService.GetTokenAsync();
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _httpClient.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync();
+            try
+            {
+                var error = JsonSerializer.Deserialize<ErrorDetails>(errorContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                if (error != null)
+                    _toastService.ShowToast($"Error: {error.Message}", ToastLevel.Error);
+                else
+                    _toastService.ShowToast($"Error: {response.StatusCode}", ToastLevel.Error);
+            }
+            catch
+            {
+                _toastService.ShowToast($"Error: {response.StatusCode}", ToastLevel.Error);
+            }
+
+            return null;
+        }
+
+        return response;
     }
 }

@@ -2,10 +2,8 @@
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
-using Microsoft.eShopWeb.ApplicationCore.Entities;
 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
-using Microsoft.eShopWeb.ApplicationCore.Specifications;
 
 namespace Microsoft.eShopWeb.ApplicationCore.Services;
 

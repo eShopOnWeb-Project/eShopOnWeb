@@ -1,14 +1,10 @@
-﻿using System.Diagnostics;
-using System.Net.Mime;
-using System.Text;
+﻿using System.Net.Mime;
 using Ardalis.ListStartupServices;
-using Azure.Identity;
 using BlazorAdmin;
 using BlazorAdmin.Services;
 using Blazored.LocalStorage;
 using BlazorShared;
 using BlazorShared.Models;
-using MediatR;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -17,25 +13,19 @@ using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.eShopWeb;
-using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
-using Microsoft.eShopWeb.ApplicationCore.Services;
+using Microsoft.eShopWeb.Infrastructure.Authentication;
 using Microsoft.eShopWeb.Infrastructure.Caching;
-using Microsoft.eShopWeb.Infrastructure.Clients;
-using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
-using Microsoft.eShopWeb.Infrastructure.Data;
+using Microsoft.eShopWeb.Infrastructure.Http;
 using Microsoft.eShopWeb.Infrastructure.Identity;
-using Microsoft.eShopWeb.Infrastructure.Services;
 using Microsoft.eShopWeb.Web;
 using Microsoft.eShopWeb.Web.Configuration;
 using Microsoft.eShopWeb.Web.Features.MyOrders;
 using Microsoft.eShopWeb.Web.HealthChecks;
 using Microsoft.eShopWeb.Web.Hubs;
-using Microsoft.eShopWeb.Web.Interfaces;
 using Microsoft.eShopWeb.Web.Services;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
-
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -43,57 +33,20 @@ builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 
-// Register OrderService
 
 
-builder.Services.AddScoped<IBasketClient, BasketClient>();
+// -----  Service Configuration  ------------------------
 
+// Configure MediatR
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<GetMyOrdersHandler>();
 });
 
-// Configure RabbitMQ options from appsettings.json
-builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMQ"));
+// Configure Infrastructure Services
+Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
 
-// Register RabbitMqService
-builder.Services.AddSingleton<IRabbitMqService>(sp =>
-{
-    var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
-    return new RabbitMqService(options);
-});
-
-if (builder.Environment.IsDevelopment() || builder.Environment.EnvironmentName == "Docker"){
-    // Configure SQL Server (local)
-    Microsoft.eShopWeb.Infrastructure.Dependencies.ConfigureServices(builder.Configuration, builder.Services);
-}
-else{
-    // Configure SQL Server (prod)
-    var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
-    builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"] ?? ""), credential);
-    builder.Services.AddDbContext<CatalogContext>(c =>
-    {
-        var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_CATALOG_CONNECTION_STRING_KEY"] ?? ""];
-        c.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
-    });
-    builder.Services.AddDbContext<AppIdentityDbContext>(options =>
-    {
-        var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_IDENTITY_CONNECTION_STRING_KEY"] ?? ""];
-        options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
-    });
-}
-
-var secretKeyPath = "/secrets/jwt/secret.key";
-
-if (!File.Exists(secretKeyPath))
-{
-    throw new Exception($"Secret key not found at: {secretKeyPath}");
-}
-
-string secretKey = File.ReadAllText(secretKeyPath).Trim();
-
-builder.Services.AddSingleton(new TokenService(secretKey));
-
+// Configure HTTP Client for Gateway with Delegating Handler
 builder.Services.AddHttpClient("Gateway", client =>
 {
     client.BaseAddress = new Uri("http://gateway:8080");
@@ -103,10 +56,10 @@ builder.Services.AddHttpClient("Gateway", client =>
     var tokenService = sp.GetRequiredService<TokenService>();
     var token = tokenService.GenerateToken();
 
-    return new DelegatingHandlerImpl(token);
+    return new BearerTokenHandler(token);
 });
 
-
+// Configure Data Protection for Docker environment
 if (builder.Environment.EnvironmentName == "Docker")
 {
     builder.Services.AddDataProtection()
@@ -114,23 +67,19 @@ if (builder.Environment.EnvironmentName == "Docker")
         .SetApplicationName("eshopweb");
 }
 
-builder.Services.AddHostedService<StockSubscriber>();
-
+// Configure Authentication
 builder.Services.AddCookieSettings();
-
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.Cookie.HttpOnly = true;
 
-        // For Docker / local testing, use None
-        options.Cookie.SecurePolicy = builder.Environment.EnvironmentName == "Docker"
-            ? CookieSecurePolicy.None
-            : CookieSecurePolicy.Always;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
 
         options.Cookie.SameSite = SameSiteMode.Lax;
     });
 
+// Configure Entity Framework and Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
            .AddDefaultUI()
            .AddEntityFrameworkStores<AppIdentityDbContext>()
@@ -140,8 +89,6 @@ builder.Services.AddScoped<ITokenClaimsService, IdentityTokenClaimService>();
 builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddCoreServices(builder.Configuration);
 builder.Services.AddWebServices(builder.Configuration);
-
-builder.Services.AddSignalR();
 
 builder.Services.AddResponseCompression(opts =>
 {
@@ -200,21 +147,24 @@ builder.Services.AddBlazorServices(builder.Configuration);
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
+
+
+
+
+// -----  Application Configuration  ------------------------
 var app = builder.Build();
 
 app.Logger.LogInformation("App created...");
 
 app.UseResponseCompression();
 
+// Seed Identity Database
 using (var scope = app.Services.CreateScope())
 {
     var scopedProvider = scope.ServiceProvider;
     try
     {
-        app.Logger.LogInformation("Seeding Database...");
-        var catalogContext = scopedProvider.GetRequiredService<CatalogContext>();
-        await CatalogContextSeed.SeedAsync(catalogContext, app.Logger);
-
+        app.Logger.LogInformation("Seeding Identity Database...");
         var userManager = scopedProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = scopedProvider.GetRequiredService<RoleManager<IdentityRole>>();
         var identityContext = scopedProvider.GetRequiredService<AppIdentityDbContext>();
@@ -226,6 +176,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Initialize Stock Cache
 using (var scope = app.Services.CreateScope())
 {
     var scopedProvider = scope.ServiceProvider;
@@ -239,16 +190,6 @@ using (var scope = app.Services.CreateScope())
     {
         app.Logger.LogError(ex, "An error occurred initializing stock cache.");
     }
-}
-
-var catalogBaseUrl = builder.Configuration.GetValue(typeof(string), "CatalogBaseUrl") as string;
-if (!string.IsNullOrEmpty(catalogBaseUrl))
-{
-    app.Use((context, next) =>
-    {
-        context.Request.PathBase = new PathString(catalogBaseUrl);
-        return next();
-    });
 }
 
 app.UseHealthChecks("/health",
@@ -269,6 +210,7 @@ app.UseHealthChecks("/health",
             await context.Response.WriteAsync(result);
         }
     });
+
 if (app.Environment.IsDevelopment() || app.Environment.EnvironmentName == "Docker")
 {
     app.Logger.LogInformation("Adding Development middleware...");
@@ -297,7 +239,6 @@ app.MapControllerRoute("default", "{controller:slugify=Home}/{action:slugify=Ind
 app.MapRazorPages();
 app.MapHealthChecks("home_page_health_check", new HealthCheckOptions { Predicate = check => check.Tags.Contains("homePageHealthCheck") });
 app.MapHealthChecks("api_health_check", new HealthCheckOptions { Predicate = check => check.Tags.Contains("apiHealthCheck") });
-//app.MapBlazorHub("/admin");
 app.MapFallbackToFile("index.html");
 
 app.MapHub<StockHub>("/stockhub");
@@ -307,22 +248,4 @@ app.Run();
 
 
 
-public class DelegatingHandlerImpl : DelegatingHandler
-{
-    private readonly string _token;
-    public DelegatingHandlerImpl(string token) => _token = token;
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        Console.WriteLine($"Sending request to {request.RequestUri}");
-        Console.WriteLine($"Authorization: Bearer {_token}");
-
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
-
-        var response = await base.SendAsync(request, cancellationToken);
-
-        Console.WriteLine($"Response status code: {response.StatusCode}");
-
-        return response;
-    }
-}

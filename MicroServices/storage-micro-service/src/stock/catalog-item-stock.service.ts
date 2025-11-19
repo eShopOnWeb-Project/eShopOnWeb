@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource } from 'typeorm';
 import { CatalogItemStock } from './entities/catalog-item-stock.entity';
-import { Item, StockItem } from './catalog-item-stock.consumer';
+import { DefaultDTOItem, FullDTOItem } from './catalog-item-stock.consumer';
 
 @Injectable()
 export class CatalogItemStockService {
@@ -12,7 +12,7 @@ export class CatalogItemStockService {
   ) {}
 
   private async withLockedItems(
-    items: Item[],
+    items: DefaultDTOItem[],
     work: (stocks: CatalogItemStock[], save: (s: CatalogItemStock) => Promise<void>) => Promise<void>
   ): Promise<CatalogItemStock[]> {
     const sortedItems = [...items].sort((a, b) => a.itemId - b.itemId);
@@ -44,7 +44,7 @@ export class CatalogItemStockService {
     });
   }
 
-  async getFullStock(): Promise<StockItem[]> {
+  async getFullStock(): Promise<FullDTOItem[]> {
     const stocks = await this.dataSource.getRepository(CatalogItemStock).find();
     return stocks.map(s => ({
       itemId: s.itemId,
@@ -61,7 +61,7 @@ export class CatalogItemStockService {
     );
   }
 
-  async restockAtomic(items: Item[]) {
+  async restockAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save) => {
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
@@ -74,7 +74,7 @@ export class CatalogItemStockService {
     })
   }
 
-  async reserveAtomic(items: Item[]) {
+  async reserveAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save) => {
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
@@ -96,7 +96,7 @@ export class CatalogItemStockService {
     })
   }
 
-  async confirmAtomic(items: Item[]) {
+  async confirmAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save) => {
       for (let i = 0; i < items.length; i++) {
         const item = items[i]
@@ -118,7 +118,7 @@ export class CatalogItemStockService {
     })
   }
 
-  async cancelAtomic(items: Item[]) {
+  async cancelAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save) => {
       for (let i = 0; i < items.length; i++) {
         const item = items[i]

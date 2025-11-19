@@ -9,7 +9,9 @@ using BlazorAdmin.Services;
 using BlazorShared.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.eShopWeb.Infrastructure.RabbitMQ.DTO;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+
 
 namespace BlazorAdmin.Pages.CatalogItemPage;
 
@@ -39,13 +41,13 @@ public partial class List : BlazorComponent
                .WithUrl(NavigationManager.ToAbsoluteUri("/stockhub"))
                .Build();
 
-        hubConnection.On<StockItem>("StockUpdated", item =>
+        hubConnection.On<RabbitMQFullDTOItem>("StockUpdated", item =>
         {
-            var existing = catalogItems.Find(ci => ci.Id == item.ItemId);
+            var existing = catalogItems.Find(ci => ci.Id == item.itemId);
             if (existing != null)
             {
-                existing.Total = item.Total;
-                existing.Reserved = item.Reserved;
+                existing.Total = item.total;
+                existing.Reserved = item.reserved;
                 InvokeAsync(StateHasChanged);
             }
         });
@@ -69,16 +71,16 @@ public partial class List : BlazorComponent
             {
                 try
                 {
-                    var fullStock = await hubConnection.InvokeAsync<List<StockItem>>("GetStockCacheAsync");
+                    var fullStock = await hubConnection.InvokeAsync<List<RabbitMQFullDTOItem>>("GetStockCacheAsync");
                     if (fullStock != null)
                     {
                         foreach (var stock in fullStock)
                         {
-                            var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.ItemId);
+                            var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.itemId);
                             if (existing != null)
                             {
-                                existing.Total = stock.Total;
-                                existing.Reserved = stock.Reserved;
+                                existing.Total = stock.total;
+                                existing.Reserved = stock.reserved;
                             }
                         }
                         StateHasChanged();

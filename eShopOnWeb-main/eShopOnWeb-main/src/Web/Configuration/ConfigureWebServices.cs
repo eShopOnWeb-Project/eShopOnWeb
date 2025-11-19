@@ -3,8 +3,6 @@ using MediatR;
 using Microsoft.eShopWeb.ApplicationCore.Contracts.Orders;
 using Microsoft.eShopWeb.ApplicationCore.Interfaces;
 using Microsoft.eShopWeb.ApplicationCore.Services;
-using Microsoft.eShopWeb.Infrastructure.Clients;
-using Microsoft.eShopWeb.Infrastructure.Clients.Orders;
 using Microsoft.eShopWeb.Web.Interfaces;
 using Microsoft.eShopWeb.Web.Services;
 using Microsoft.Extensions.Options;
@@ -22,17 +20,14 @@ public static class ConfigureWebServices
         services.Configure<BaseUrlConfiguration>(configSection);
         var baseUrlConfig = configSection.Get<BaseUrlConfiguration>();
 
-        services.AddScoped<ICatalogApiClient, CatalogApiClient>();
-        services.AddScoped<IOrderServiceClient, OrderServiceClient>();
-
         services.AddScoped<IOrderService, OrderService>();
-
         services.AddScoped<CatalogViewModelService>();
         services.AddScoped<ICatalogViewModelService, CachedCatalogViewModelService>();
-
         services.AddScoped<IBasketViewModelService, BasketViewModelService>();
         services.AddScoped<ICatalogItemViewModelService, CatalogItemViewModelService>();
         services.Configure<CatalogSettings>(configuration);
+
+        services.AddHostedService<RabbitMqStockUpdateSubscriber>();
 
         return services;
     }
