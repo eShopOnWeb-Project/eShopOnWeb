@@ -33,19 +33,19 @@ async def test_list_catalog_items(db_session):
         await repo.add(item)
 
     # List without filters, default skip=0, take=10
-    result = await repo.list_catalog_items(db_session)
+    result = await repo.list_catalog_items()
     assert len(result) == 10
 
     # List with skip=10, take=5 (should get remaining 5)
-    result = await repo.list_catalog_items(db_session, skip=10, take=5)
+    result = await repo.list_catalog_items(skip=10, take=5)
     assert len(result) == 5
 
     # List filtered by brand_id=1
-    filtered = await repo.list_catalog_items(db_session, brand_id=1)
+    filtered = await repo.list_catalog_items(brand_id=1)
     assert all(item.catalog_brand_id == 1 for item in filtered)
 
     # List filtered by type_id=2
-    filtered = await repo.list_catalog_items(db_session, type_id=2)
+    filtered = await repo.list_catalog_items(type_id=2)
     assert all(item.catalog_type_id == 2 for item in filtered)
 
 @pytest.mark.asyncio
@@ -63,13 +63,13 @@ async def test_count_catalog_items(db_session):
     for item in items:
         await repo.add(item)
 
-    total = await repo.count_catalog_items(db_session)
+    total = await repo.count_catalog_items()
     assert total >= 6
 
-    count_brand_1 = await repo.count_catalog_items(db_session, brand_id=1)
+    count_brand_1 = await repo.count_catalog_items(brand_id=1)
     assert count_brand_1 >= 6
 
-    count_type_1 = await repo.count_catalog_items(db_session, type_id=1)
+    count_type_1 = await repo.count_catalog_items(type_id=1)
     assert count_type_1 > 0
     assert count_type_1 <= count_brand_1
 
