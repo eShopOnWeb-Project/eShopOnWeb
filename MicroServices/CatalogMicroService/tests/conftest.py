@@ -30,7 +30,6 @@ async def prepare_db():
     async with engine_test.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     yield
-    # Undgå sletning efter test for at undgå Windows låsefejl
 
 @pytest_asyncio.fixture
 async def db_session():

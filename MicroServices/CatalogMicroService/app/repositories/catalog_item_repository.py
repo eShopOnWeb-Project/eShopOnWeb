@@ -33,8 +33,10 @@ class CatalogItemRepository:
         skip: int = 0,
         take: int = 10,
         brand_id: int | None = None,
-        type_id: int | None = None
+        type_id: int | None = None,
+        db: AsyncSession | None = None,
     ) -> Sequence[CatalogItem]:
+        session = db or self.db
         stmt = select(CatalogItem)
         if brand_id is not None:
             stmt = stmt.where(CatalogItem.catalog_brand_id == brand_id)
@@ -42,7 +44,7 @@ class CatalogItemRepository:
             stmt = stmt.where(CatalogItem.catalog_type_id == type_id)
         stmt = stmt.offset(skip).limit(take)
         try:
-            result = await self.db.execute(stmt)
+            result = await session.execute(stmt)
         except SQLAlchemyError as exc:
             logger.exception("Failed to list catalog items")
             raise DatabaseOperationError("Failed to list catalog items") from exc
@@ -58,15 +60,17 @@ class CatalogItemRepository:
     async def count_catalog_items(
         self,
         brand_id: int | None = None,
-        type_id: int | None = None
+        type_id: int | None = None,
+        db: AsyncSession | None = None,
     ) -> int:
+        session = db or self.db
         stmt = select(func.count()).select_from(CatalogItem)
         if brand_id is not None:
             stmt = stmt.where(CatalogItem.catalog_brand_id == brand_id)
         if type_id is not None:
             stmt = stmt.where(CatalogItem.catalog_type_id == type_id)
         try:
-            result = await self.db.execute(stmt)
+            result = await session.execute(stmt)
         except SQLAlchemyError as exc:
             logger.exception("Failed to count catalog items")
             raise DatabaseOperationError("Failed to count catalog items") from exc
