@@ -60,7 +60,10 @@ describe('CatalogItemStockService', () => {
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.restock.success',
-      items
+      [
+        { itemId: 1, amount: 13, basketId: 1 }, // Updated total for Item 1
+        { itemId: 2, amount: 24, basketId: 1 }, // Updated total for Item 2
+      ]
     );
   });
 
@@ -88,7 +91,10 @@ describe('CatalogItemStockService', () => {
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.reserve.success',
-      items
+      [
+        { itemId: 1, amount: 7, basketId: 1 },  // Total reserved for Item 1: 5 (new reservation) + 2 (previously reserved)
+        { itemId: 2, amount: 3, basketId: 1 },  // Total reserved for Item 2: 2 (new reservation) + 1 (previously reserved)
+      ]
     );
   });
 
@@ -108,7 +114,10 @@ describe('CatalogItemStockService', () => {
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.confirm.success',
-      items
+      [
+        { itemId: 1, amount: 3, basketId: 1 },
+        { itemId: 2, amount: 1, basketId: 1 },
+      ]
     );
   });
 
@@ -136,7 +145,10 @@ describe('CatalogItemStockService', () => {
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.cancel.success',
-      items
+      [
+        { itemId: 1, amount: 2, basketId: 1 },
+        { itemId: 2, amount: 1, basketId: 1 },
+      ]
     );
   });
 
