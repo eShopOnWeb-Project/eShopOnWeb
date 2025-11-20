@@ -41,7 +41,8 @@ public class OrderServiceClient : IOrderServiceClient
     public async Task<OrderReadDto> GetOrderByIdAsync(int orderId)
     {
         _logger.LogInformation("Retrieving order {OrderId}.", orderId);
-        var order = await _httpClient.GetFromJsonAsync<OrderReadDto>($"api/v1/orders/{orderId}");
+        var order = await _httpClient.GetFromJsonAsync<OrderReadDto>($"api/v1/orders/{orderId}")
+            ?? throw new InvalidOperationException($"Order service returned null for order {orderId}.");
         _logger.LogInformation("Retrieved order {OrderId}.", orderId);
         return order;
     }
@@ -49,8 +50,9 @@ public class OrderServiceClient : IOrderServiceClient
     public async Task<List<OrderReadDto>> GetOrdersForUserAsync(string buyerId)
     {
         _logger.LogInformation("Retrieving orders for buyer {BuyerId}.", buyerId);
-        var orders = await _httpClient.GetFromJsonAsync<List<OrderReadDto>>($"api/v1/orders?buyer_id={buyerId}");
-        _logger.LogInformation("Retrieved {Count} orders for buyer {BuyerId}.", orders?.Count ?? 0, buyerId);
+        var orders = await _httpClient.GetFromJsonAsync<List<OrderReadDto>>($"api/v1/orders?buyer_id={buyerId}")
+            ?? new List<OrderReadDto>();
+        _logger.LogInformation("Retrieved {Count} orders for buyer {BuyerId}.", orders.Count, buyerId);
         return orders;
     }
 }

@@ -19,7 +19,12 @@ public class BasketClient : IBasketClient
     public BasketClient(HttpClient httpClient, IConfiguration configuration, ILogger<BasketClient> logger)
     {
         _httpClient = httpClient;
-        _httpClient.BaseAddress = new Uri(configuration["baseUrls:basketMicroservice"].TrimEnd('/') + "/");
+        var baseUrl = configuration["baseUrls:basketMicroservice"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException("Missing configuration for baseUrls:basketMicroservice");
+        }
+        _httpClient.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
         _logger = logger;
     }
 
@@ -49,7 +54,11 @@ public class BasketClient : IBasketClient
     {
         _logger.LogInformation("Getting or creating basket for buyer {BuyerId}.", username);
         var result= await _httpClient.GetFromJsonAsync<BasketDTO>($"getOrCreate/{username}");
-        _logger.LogInformation("Basket {BasketId} retrieved for buyer {BuyerId}.", result?.Id, username);
+        if (result == null)
+        {
+            throw new InvalidOperationException($"Basket service returned null basket for buyer {username}.");
+        }
+        _logger.LogInformation("Basket {BasketId} retrieved for buyer {BuyerId}.", result.Id, username);
         return result;
     }
 
@@ -69,15 +78,23 @@ public class BasketClient : IBasketClient
         var response = await _httpClient.PatchAsJsonAsync("setQuantities", dto);
 
         var result = await response.Content.ReadFromJsonAsync<BasketDTO>();
+        if (result == null)
+        {
+            throw new InvalidOperationException($"Basket service returned null after setting quantities for basket {basketId}.");
+        }
         _logger.LogInformation("Updated quantities for basket {BasketId}.", basketId);
         return result;
     }
 
-    public Task<BasketDTO> AddItemToBasket(AddBasketItemDto addBasketItemDto)
+    public async Task<BasketDTO> AddItemToBasket(AddBasketItemDto addBasketItemDto)
     {
-        _logger.LogInformation("Adding catalog item {CatalogItemId} to basket {BasketId}.", addBasketItemDto.CatalogItemId, addBasketItemDto.BasketId);
-        var result = _httpClient.PostAsJsonAsync("addItem", addBasketItemDto)
-            .Result.Content.ReadFromJsonAsync<BasketDTO>();
+        _logger.LogInformation("Adding catalog item {CatalogItemId} for buyer {UserName}.", addBasketItemDto.CatalogItemId, addBasketItemDto.Username);
+        var response = await _httpClient.PostAsJsonAsync("addItem", addBasketItemDto);
+        var result = await response.Content.ReadFromJsonAsync<BasketDTO>();
+        if (result == null)
+        {
+            throw new InvalidOperationException($"Basket service returned null after adding item {addBasketItemDto.CatalogItemId}.");
+        }
 
         return result;
     }

@@ -90,7 +90,7 @@ public class RabbitMqService : IRabbitMqService
         }
 
         var response = await tcs.Task;
-        _logger.LogInformation("Reservation response received with status {Status}.", response.status);
+        _logger.LogInformation("Reservation response received. Success={Success}, Reason={Reason}.", response.success, response.reason);
         return response;
     }
 
@@ -200,7 +200,7 @@ public class RabbitMqService : IRabbitMqService
         }
 
         var response = await tcs.Task;
-        _logger.LogInformation("Active reservations response received with status {Status}.", response.status);
+        _logger.LogInformation("Active reservations response received. Success={Success}, MissingCount={MissingCount}.", response.success, response.missingItems.Count);
         return response;
     }
 
