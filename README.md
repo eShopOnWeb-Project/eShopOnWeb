@@ -12,7 +12,6 @@ behind an mTLS-enabled API gateway with shared monitoring and credentials.
 - `MicroServices/` – standalone bounded contexts (Catalog, Orders, Basket,
   Storage, API Gateway) with their own runtimes, databases, and Dockerfiles.
 - `Monitoring/` – Loki + Promtail + Grafana stack for logs and dashboards.
-- `infra/` – Bicep templates and parameters for deploying the platform to Azure.
 - Root-level Compose files (`all-services.yml`, `compose.common.yml`,
   `docker-compose-adminPages.yml`) wire everything together plus shared RabbitMQ,
   pgAdmin, secrets, and networks.
@@ -29,7 +28,7 @@ behind an mTLS-enabled API gateway with shared monitoring and credentials.
   - Storage (NestJS + TypeORM) for inventory stock with scheduled workers.
 - **Cross-cutting**: RabbitMQ for messaging, pgAdmin for DB introspection,
   Loki/Grafana for logs, Docker secrets for TLS & JWTs, Azure SQL Edge for the
-  legacy MVC app, and optional Infrastructure-as-Code for cloud rollout.
+  legacy MVC app.
 
 ## Microservices & Apps
 
@@ -101,13 +100,10 @@ and health checks so you can run them in isolation or under the umbrella stack.
 - Catalog API: internal `https://catalog:8000`
 - Order API: internal `https://orders:8001`
 
-## Infrastructure as Code
+## Github Action Workflows
 
-- `infra/main.bicep` plus `*.bicep` modules under `infra/core` describe Azure
-  resources (App Service, databases, networking, security).
-- `azure.yaml` includes deployment metadata, and `main.parameters.json` carries
-  sample parameter values. Use `az deployment sub create` or `az deployment group`
-  workflows to provision cloud environments mirroring the local topology.
+- **build-and-test.yml**: tests all the microservices and the legacy MVC app as well as building all docker images. on all pull requests or pushes to main.
+- **deploy.yml**: on all pushes to main, it will pull all images and start all-services.yml. it can only run on a self-hosted runner right now, so it will require users to start one before it can deploy. this workflow is currently disabled and for demonstration purposes.
 
 ## Getting Productive
 
