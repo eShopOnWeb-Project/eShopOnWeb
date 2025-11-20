@@ -45,8 +45,8 @@ describe('CatalogItemStockService', () => {
 
   it('should publish event after successful restock', async () => {
     const items = [
-      { itemId: 1, amount: 3 },
-      { itemId: 2, amount: 4 },
+      { itemId: 1, amount: 3, basketId: 1 },
+      { itemId: 2, amount: 4, basketId: 1 },
     ];
     // Mock findOne to return current stock for each item
     mockManager.findOne
@@ -65,7 +65,7 @@ describe('CatalogItemStockService', () => {
   });
 
   it('should throw error if not enough stock to reserve', async () => {
-    const items = [{ itemId: 99, amount: 50 }];
+    const items = [{ itemId: 99, amount: 50, basketId: 1 }];
     mockManager.findOne.mockResolvedValue({ itemId: 99, total: 10, reserved: 5 });
     mockManager.create.mockImplementation((entity, data) => data ?? []);
 
@@ -74,8 +74,8 @@ describe('CatalogItemStockService', () => {
 
   it('should reserve stock successfully and publish event', async () => {
     const items = [
-      { itemId: 1, amount: 5 },
-      { itemId: 2, amount: 2 },
+      { itemId: 1, amount: 5, basketId: 1 },
+      { itemId: 2, amount: 2, basketId: 1 },
     ];
     mockManager.findOne
       .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 2 })
@@ -94,8 +94,8 @@ describe('CatalogItemStockService', () => {
 
   it('should confirm stock reservation and publish event', async () => {
     const items = [
-      { itemId: 1, amount: 3 },
-      { itemId: 2, amount: 1 },
+      { itemId: 1, amount: 3, basketId: 1 },
+      { itemId: 2, amount: 1, basketId: 1 },
     ];
     mockManager.findOne
       .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 5 })
@@ -113,7 +113,7 @@ describe('CatalogItemStockService', () => {
   });
 
   it('should throw error if trying to confirm more than reserved', async () => {
-    const items = [{ itemId: 1, amount: 10 }];
+    const items = [{ itemId: 1, amount: 10, basketId: 1 }];
     mockManager.findOne.mockResolvedValue({ itemId: 1, total: 10, reserved: 5 });
     mockManager.create.mockImplementation((entity, data) => data ?? []);
 
@@ -122,8 +122,8 @@ describe('CatalogItemStockService', () => {
 
   it('should cancel reservation and publish event', async () => {
     const items = [
-      { itemId: 1, amount: 2 },
-      { itemId: 2, amount: 1 },
+      { itemId: 1, amount: 2, basketId: 1 },
+      { itemId: 2, amount: 1, basketId: 1 },
     ];
     mockManager.findOne
       .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 5 })
@@ -141,7 +141,7 @@ describe('CatalogItemStockService', () => {
   });
 
   it('should throw error if trying to cancel more than reserved', async () => {
-    const items = [{ itemId: 1, amount: 10 }];
+    const items = [{ itemId: 1, amount: 10, basketId: 1 }];
     mockManager.findOne.mockResolvedValue({ itemId: 1, total: 10, reserved: 5 });
     mockManager.create.mockImplementation((entity, data) => data ?? []);
 
