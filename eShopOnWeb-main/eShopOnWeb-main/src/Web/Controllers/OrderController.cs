@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.eShopWeb.Web.Features.MyOrders;
 using Microsoft.eShopWeb.Web.Features.OrderDetails;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.eShopWeb.Web.Controllers;
 
@@ -13,16 +14,19 @@ namespace Microsoft.eShopWeb.Web.Controllers;
 public class OrderController : Controller
 {
     private readonly IMediator _mediator;
+    private readonly ILogger<OrderController> _logger;
 
-    public OrderController(IMediator mediator)
+    public OrderController(IMediator mediator, ILogger<OrderController> logger)
     {
         _mediator = mediator;
+        _logger = logger;
     }
 
     [HttpGet]
     public async Task<IActionResult> MyOrders()
     {   
         Guard.Against.Null(User?.Identity?.Name, nameof(User.Identity.Name));
+        _logger.LogInformation("Fetching orders for user {UserName}.", User.Identity!.Name);
         var viewModel = await _mediator.Send(new GetMyOrders(User.Identity.Name));
 
         return View(viewModel);
@@ -32,10 +36,12 @@ public class OrderController : Controller
     public async Task<IActionResult> Detail(int orderId)
     {
         Guard.Against.Null(User?.Identity?.Name, nameof(User.Identity.Name));
+        _logger.LogInformation("Fetching order {OrderId} details for user {UserName}.", orderId, User.Identity!.Name);
         var viewModel = await _mediator.Send(new GetOrderDetails(User.Identity.Name, orderId));
 
         if (viewModel == null)
         {
+            _logger.LogWarning("Order {OrderId} not found for user {UserName}.", orderId, User.Identity.Name);
             return BadRequest("No such order found for this user.");
         }
 

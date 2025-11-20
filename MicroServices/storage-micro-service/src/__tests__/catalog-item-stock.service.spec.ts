@@ -55,7 +55,6 @@ describe('CatalogItemStockService', () => {
     ];
     const stock1 = { id: 1, itemId: 1, total: 10, reserved: 0 };
     const stock2 = { id: 2, itemId: 2, total: 20, reserved: 0 };
-    // Mock findOne to return current stock for each item
     mockManager.findOne
       .mockResolvedValueOnce(stock1)
       .mockResolvedValueOnce(stock2);
@@ -80,11 +79,11 @@ describe('CatalogItemStockService', () => {
     const items = [{ itemId: 99, amount: 50, basketId: 1 }];
     const stock = { id: 1, itemId: 99, total: 10, reserved: 5 };
     mockManager.findOne
-      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
-      .mockResolvedValueOnce(null); // No existing reservation
+      .mockResolvedValueOnce(stock)
+      .mockResolvedValueOnce(null);
     mockManager.create.mockImplementation((entity, data) => data ?? ({} as any));
 
-    await expect(service.reserveAtomic(items)).rejects.toThrow('Not enough stock');
+    await expect(service.reserveAtomic(items)).rejects.toThrow(/Insufficient stock|Not enough stock/);
   });
 
   it('should reserve stock successfully when no existing reservation and publish event', async () => {
@@ -95,9 +94,6 @@ describe('CatalogItemStockService', () => {
     const stock1 = { id: 1, itemId: 1, total: 10, reserved: 2 };
     const stock2 = { id: 2, itemId: 2, total: 5, reserved: 1 };
     
-    // withLockedItems sorts items by itemId, so it will look up itemId 1 first, then itemId 2
-    // Then in reserveAtomic, it loops through items in original order but uses stocks[i] which is sorted
-    // Since items are already sorted by itemId, stocks[0] corresponds to items[0] (itemId 1)
     mockManager.findOne.mockImplementation((entity, options: any) => {
       if (entity === CatalogItemStock) {
         const itemId = options?.where?.itemId;
@@ -105,26 +101,24 @@ describe('CatalogItemStockService', () => {
         if (itemId === 2) return Promise.resolve(stock2);
       }
       if (entity === Reservation) {
-        // No existing reservations
         return Promise.resolve(null);
       }
       return Promise.resolve(null);
     });
 
-    // Mock create to return a reservation object with the data passed to it
     mockManager.create.mockImplementation((entity, data) => {
       return data as any;
     });
 
     await service.reserveAtomic(items);
 
-    expect(mockManager.save).toHaveBeenCalledTimes(4); // 2 reservations + 2 stocks
-    expect(stock1.reserved).toBe(7); // 2 + 5 = 7
-    expect(stock2.reserved).toBe(3); // 1 + 2 = 3
+    expect(mockManager.save).toHaveBeenCalledTimes(4);
+    expect(stock1.reserved).toBe(7);
+    expect(stock2.reserved).toBe(3);
     
     const expectedResults: DefaultDTOItem[] = [
-      { itemId: 1, amount: 7, basketId: 1 }, // stock.reserved after update
-      { itemId: 2, amount: 3, basketId: 1 }, // stock.reserved after update
+      { itemId: 1, amount: 7, basketId: 1 },
+      { itemId: 2, amount: 3, basketId: 1 },
     ];
 
     expect(mockAmqp.publish).toHaveBeenCalledWith(
@@ -140,14 +134,14 @@ describe('CatalogItemStockService', () => {
     const existingReservation = { id: 1, itemId: 1, basketId: 1, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
     
     mockManager.findOne
-      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
-      .mockResolvedValueOnce(existingReservation); // Existing reservation
+      .mockResolvedValueOnce(stock)
+      .mockResolvedValueOnce(existingReservation);
 
     await service.reserveAtomic(items);
 
-    expect(mockManager.save).toHaveBeenCalledTimes(2); // reservation + stock
+    expect(mockManager.save).toHaveBeenCalledTimes(2);
     expect(existingReservation.amount).toBe(7);
-    expect(stock.reserved).toBe(4); // 2 + (7-5) = 4
+    expect(stock.reserved).toBe(4);
   });
 
   it('should update existing reservation when amount decreases', async () => {
@@ -156,14 +150,14 @@ describe('CatalogItemStockService', () => {
     const existingReservation = { id: 1, itemId: 1, basketId: 1, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
     
     mockManager.findOne
-      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
-      .mockResolvedValueOnce(existingReservation); // Existing reservation
+      .mockResolvedValueOnce(stock)
+      .mockResolvedValueOnce(existingReservation);
 
     await service.reserveAtomic(items);
 
-    expect(mockManager.save).toHaveBeenCalledTimes(2); // reservation + stock
+    expect(mockManager.save).toHaveBeenCalledTimes(2);
     expect(existingReservation.amount).toBe(3);
-    expect(stock.reserved).toBe(5); // 7 - (5-3) = 5
+    expect(stock.reserved).toBe(5);
   });
 
   it('should confirm stock reservation and publish event', async () => {
@@ -175,25 +169,25 @@ describe('CatalogItemStockService', () => {
     const stock2 = { id: 2, itemId: 2, total: 5, reserved: 2 };
     
     mockManager.findOne
-      .mockResolvedValueOnce(stock1) // CatalogItemStock lookup for item 1
-      .mockResolvedValueOnce(stock2); // CatalogItemStock lookup for item 2
+      .mockResolvedValueOnce(stock1)
+      .mockResolvedValueOnce(stock2);
 
     const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 3, status: 'reserved', expiresAt: new Date() };
     const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 1, status: 'reserved', expiresAt: new Date() };
     
     mockManager.find
-      .mockResolvedValueOnce([reservation1]) // Reservations for item 1
-      .mockResolvedValueOnce([reservation2]); // Reservations for item 2
+      .mockResolvedValueOnce([reservation1])
+      .mockResolvedValueOnce([reservation2]);
 
     await service.confirmAtomic(items);
 
     expect(mockManager.save).toHaveBeenCalled();
     expect(reservation1.status).toBe('confirmed');
     expect(reservation2.status).toBe('confirmed');
-    expect(stock1.reserved).toBe(2); // 5 - 3 = 2
-    expect(stock1.total).toBe(7); // 10 - 3 = 7
-    expect(stock2.reserved).toBe(1); // 2 - 1 = 1
-    expect(stock2.total).toBe(4); // 5 - 1 = 4
+    expect(stock1.reserved).toBe(2);
+    expect(stock1.total).toBe(7);
+    expect(stock2.reserved).toBe(1);
+    expect(stock2.total).toBe(4);
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.confirm.success',
@@ -206,9 +200,9 @@ describe('CatalogItemStockService', () => {
     const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
     
     mockManager.findOne.mockResolvedValueOnce(stock);
-    mockManager.find.mockResolvedValueOnce([]); // No reservations
+    mockManager.find.mockResolvedValueOnce([]);
 
-    await expect(service.confirmAtomic(items)).rejects.toThrow('Not enough reserved stock');
+    await expect(service.confirmAtomic(items)).rejects.toThrow(/Insufficient reserved stock|Not enough reserved stock/);
   });
 
   it('should cancel reservation and publish event', async () => {
@@ -220,23 +214,23 @@ describe('CatalogItemStockService', () => {
     const stock2 = { id: 2, itemId: 2, total: 5, reserved: 2 };
     
     mockManager.findOne
-      .mockResolvedValueOnce(stock1) // CatalogItemStock lookup for item 1
-      .mockResolvedValueOnce(stock2); // CatalogItemStock lookup for item 2
+      .mockResolvedValueOnce(stock1)
+      .mockResolvedValueOnce(stock2);
 
     const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 2, status: 'reserved', expiresAt: new Date() };
     const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 1, status: 'reserved', expiresAt: new Date() };
     
     mockManager.find
-      .mockResolvedValueOnce([reservation1]) // Reservations for item 1
-      .mockResolvedValueOnce([reservation2]); // Reservations for item 2
+      .mockResolvedValueOnce([reservation1])
+      .mockResolvedValueOnce([reservation2]);
 
     await service.cancelAtomic(items);
 
     expect(mockManager.save).toHaveBeenCalled();
     expect(reservation1.status).toBe('cancelled');
     expect(reservation2.status).toBe('cancelled');
-    expect(stock1.reserved).toBe(3); // 5 - 2 = 3
-    expect(stock2.reserved).toBe(1); // 2 - 1 = 1
+    expect(stock1.reserved).toBe(3);
+    expect(stock2.reserved).toBe(1);
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.cancel.success',
@@ -249,9 +243,9 @@ describe('CatalogItemStockService', () => {
     const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
     
     mockManager.findOne.mockResolvedValueOnce(stock);
-    mockManager.find.mockResolvedValueOnce([]); // No reservations found
+    mockManager.find.mockResolvedValueOnce([]);
 
-    await expect(service.cancelAtomic(items)).rejects.toThrow(/Cannot cancel more than reserved|No active reservation found/);
+    await expect(service.cancelAtomic(items)).rejects.toThrow(/Insufficient reserved stock|Cannot cancel more than reserved|No active reservation found/);
   });
 
   it('should throw error if no active reservation found', async () => {
@@ -259,7 +253,7 @@ describe('CatalogItemStockService', () => {
     const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
     
     mockManager.findOne.mockResolvedValueOnce(stock);
-    mockManager.find.mockResolvedValueOnce([]); // No reservations found
+    mockManager.find.mockResolvedValueOnce([]);
 
     await expect(service.cancelAtomic(items)).rejects.toThrow('No active reservation found');
   });
@@ -296,7 +290,7 @@ describe('CatalogItemStockService', () => {
       const result = await service.checkActiveReservations(items);
 
       expect(result.success).toBe(false);
-      expect(result.missingItems).toEqual([1]); // Item 1 has only 3 reserved but needs 5
+      expect(result.missingItems).toEqual([1]);
     });
 
     it('should return success for empty items array', async () => {

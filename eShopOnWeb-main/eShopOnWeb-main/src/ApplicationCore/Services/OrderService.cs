@@ -13,23 +13,31 @@ public class OrderService : IOrderService
     private readonly ICatalogApiClient _catalogApiClient;
     private readonly IUriComposer _uriComposer;
     private readonly IBasketClient _basketClient;
+    private readonly IAppLogger<OrderService> _logger;
 
     public OrderService(
         ICatalogApiClient catalogApiClient,
         IUriComposer uriComposer,
         IOrderServiceClient orderServiceClient, 
-        IBasketClient basketClient)
+        IBasketClient basketClient,
+        IAppLogger<OrderService> logger)
     {
         _catalogApiClient = catalogApiClient;
         _uriComposer = uriComposer;
         _orderServiceClient = orderServiceClient;
         _basketClient = basketClient;
+        _logger = logger;
     }
     
     public async Task CreateOrderAsync(int basketId, Address shippingAddress)
     {
+        _logger.LogInformation("Starting order creation for basket {BasketId}.", basketId);
         var basket = await _basketClient.GetBasket(basketId);
-        if (basket == null || basket.Items.Count == 0) throw new InvalidOperationException("Basket is empty or not found.");
+        if (basket == null || basket.Items.Count == 0)
+        {
+            _logger.LogWarning("Basket {BasketId} is empty or not found.", basketId);
+            throw new InvalidOperationException("Basket is empty or not found.");
+        }
 
         var catalogItemsResponse = await _catalogApiClient.GetCatalogItemsAsync();
         var catalogItems = catalogItemsResponse.CatalogItems;
@@ -37,6 +45,8 @@ public class OrderService : IOrderService
         catalogItems = catalogItems
             .Where(ci => basketItemIds.Contains(ci.Id))
             .ToList();
+
+        _logger.LogInformation("Found {ItemCount} catalog items for basket {BasketId}.", catalogItems.Count, basketId);
 
         var items = basket.Items.Select(basketItem =>
         {
@@ -65,6 +75,10 @@ public class OrderService : IOrderService
             Items = items
         };
 
+        _logger.LogInformation("Sending order for buyer {BuyerId} with {ItemCount} items.", createOrderDto.BuyerId, items.Count);
+
         await _orderServiceClient.CreateOrderAsync(createOrderDto);
+
+        _logger.LogInformation("Order for basket {BasketId} successfully created.", basketId);
     }
 }

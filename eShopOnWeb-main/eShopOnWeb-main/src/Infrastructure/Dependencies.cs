@@ -13,6 +13,7 @@ using Microsoft.eShopWeb.Infrastructure.RabbitMQ.Services;
 using Microsoft.eShopWeb.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Microsoft.eShopWeb.Infrastructure;
@@ -34,7 +35,11 @@ public static class Dependencies
             throw new Exception($"Secret key not found at: {secretKeyPath}");
         }
         string secretKey = File.ReadAllText(secretKeyPath).Trim();
-        services.AddSingleton(new TokenService(secretKey));
+        services.AddSingleton(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<TokenService>>();
+            return new TokenService(secretKey, logger);
+        });
 
         // Register HTTP Clients
         services.AddScoped<ICatalogApiClient, CatalogApiClient>();
@@ -49,7 +54,8 @@ public static class Dependencies
         services.AddSingleton<IRabbitMqService>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
-            return new RabbitMqService(options);
+            var logger = sp.GetRequiredService<ILogger<RabbitMqService>>();
+            return new RabbitMqService(options, logger);
         });
     }
 }

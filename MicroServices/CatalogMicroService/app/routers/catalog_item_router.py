@@ -1,23 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
-from app.repositories.catalog_item_repository import CatalogItemRepository
-from app.dto.catalog_item_dto import CatalogItemDTO
-from app.schemas.delete_catalog_item_response import DeleteCatalogItemResponse
-from app.schemas.list_paged_catalog_item_response import ListPagedCatalogItemResponse
+import logging
 from typing import Optional
 
-router = APIRouter(prefix="/items", tags=["catalog-items"])
-base_url="http://localhost:8000"  
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
-# GET /items/{id}
+from app.database import get_db
+from app.dto.catalog_item_dto import CatalogItemDTO
+from app.repositories.catalog_item_repository import CatalogItemRepository
+from app.schemas.delete_catalog_item_response import DeleteCatalogItemResponse
+from app.schemas.list_paged_catalog_item_response import ListPagedCatalogItemResponse
+
+router = APIRouter(prefix="/items", tags=["catalog-items"])
+
+logger = logging.getLogger("catalog.router.items")
+
 @router.get("/{catalog_item_id}", response_model=CatalogItemDTO)
 async def get_catalog_item(catalog_item_id: int, db: AsyncSession = Depends(get_db)):
+    logger.info("Fetching catalog item %s", catalog_item_id)
     repo = CatalogItemRepository(db)
     item = await repo.get_by_id(catalog_item_id)
     if not item:
+        logger.warning("Catalog item %s not found", catalog_item_id)
         raise HTTPException(status_code=404, detail="Catalog item not found")
     dto = CatalogItemDTO.model_validate(item)
+    logger.debug("Catalog item %s returned", catalog_item_id)
     return dto
 
 @router.get("", response_model=ListPagedCatalogItemResponse)
@@ -29,14 +35,18 @@ async def list_catalog_items(
     db: AsyncSession = Depends(get_db)
 ):
     repo = CatalogItemRepository(db)
+    logger.info(
+        "Listing catalog items page_size=%s page_index=%s brand_id=%s type_id=%s",
+        pageSize,
+        pageIndex,
+        catalogBrandId,
+        catalogTypeId,
+    )
 
-    # count total items
-    total_items = await repo.count_catalog_items(db, catalogBrandId, catalogTypeId)
+    total_items = await repo.count_catalog_items(catalogBrandId, catalogTypeId)
 
     if pageSize is None:
-        # fetch all items when pageSize is not specified
         items = await repo.list_catalog_items(
-            db,
             skip=0,
             take=total_items,
             brand_id=catalogBrandId,
@@ -44,9 +54,7 @@ async def list_catalog_items(
         )
         page_count = 1 if total_items > 0 else 0
     else:
-        # fetch paginated items
         items = await repo.list_catalog_items(
-            db,
             skip=pageIndex * pageSize,
             take=pageSize,
             brand_id=catalogBrandId,
@@ -54,29 +62,36 @@ async def list_catalog_items(
         )
         page_count = (total_items + pageSize - 1) // pageSize
 
-    # map to DTOs
     catalog_items = [CatalogItemDTO.model_validate(i) for i in items]
+    logger.info(
+        "Returning %s catalog items (page_count=%s) from %s total",
+        len(catalog_items),
+        page_count,
+        total_items,
+    )
 
     return ListPagedCatalogItemResponse(
         catalog_items=catalog_items,
         page_count=page_count
     )
 
-# POST /items
 @router.post("", response_model=CatalogItemDTO)
 async def create_catalog_item(item: CatalogItemDTO, db: AsyncSession = Depends(get_db)):
+    logger.info("Creating catalog item with name '%s'", item.name)
     repo = CatalogItemRepository(db)
     catalog_item = item.to_model()
     new_item = await repo.add(catalog_item)
     dto = CatalogItemDTO.model_validate(new_item)
+    logger.info("Catalog item %s created", dto.id)
     return dto
 
-# PUT /items
 @router.put("", response_model=CatalogItemDTO)
 async def update_catalog_item(item: CatalogItemDTO, db: AsyncSession = Depends(get_db)):
+    logger.info("Updating catalog item %s", item.id)
     repo = CatalogItemRepository(db)
     existing = await repo.get_by_id(item.id)
     if not existing:
+        logger.warning("Catalog item %s not found for update", item.id)
         raise HTTPException(status_code=404, detail="Catalog item not found")
     existing.name = item.name
     existing.description = item.description
@@ -87,12 +102,14 @@ async def update_catalog_item(item: CatalogItemDTO, db: AsyncSession = Depends(g
     dto = CatalogItemDTO.model_validate(updated_item)
     return dto
 
-# DELETE /items/{id}
 @router.delete("/{catalog_item_id}", response_model=DeleteCatalogItemResponse)
 async def delete_catalog_item(catalog_item_id: int, db: AsyncSession = Depends(get_db)):
+    logger.info("Deleting catalog item %s", catalog_item_id)
     repo = CatalogItemRepository(db)
     existing = await repo.get_by_id(catalog_item_id)
     if not existing:
+        logger.warning("Catalog item %s not found for deletion", catalog_item_id)
         raise HTTPException(status_code=404, detail="Catalog item not found")
     await repo.delete(existing)
+    logger.info("Catalog item %s deleted", catalog_item_id)
     return DeleteCatalogItemResponse()

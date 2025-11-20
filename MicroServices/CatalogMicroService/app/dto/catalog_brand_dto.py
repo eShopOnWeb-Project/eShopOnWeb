@@ -1,9 +1,8 @@
 from pydantic import BaseModel, ConfigDict
-from typing import List
 
 class CatalogBrandDTO(BaseModel):
     id: int | None = None
-    brand: str  
+    brand: str
 
     model_config = ConfigDict(from_attributes=True)
 
