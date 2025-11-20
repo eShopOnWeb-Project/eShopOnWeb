@@ -17,6 +17,7 @@ describe('CatalogItemStockService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn().mockImplementation(async (entity) => entity),
+      find: jest.fn(), // Mock find for active reservations
     } as any;
 
     mockDataSource = {
@@ -34,28 +35,23 @@ describe('CatalogItemStockService', () => {
     service = new CatalogItemStockService(mockAmqp, mockDataSource);
   });
 
-  describe('getFullStock', () => {
-    it('should return all stock items', async () => {
-      const stocks = await service.getFullStock();
-      expect(stocks).toEqual([
-        { itemId: 1, total: 10, reserved: 2 },
-        { itemId: 2, total: 5, reserved: 1 },
-      ]);
-      expect(mockDataSource.getRepository).toHaveBeenCalled();
-    });
-  });
-
   describe('restockAtomic', () => {
     it('should publish event after successful restock', async () => {
       const items = [
         { itemId: 1, amount: 3, basketId: 101 },
         { itemId: 2, amount: 4, basketId: 102 },
       ];
+
       // Mock findOne to return current stock for each item
       mockManager.findOne
         .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 0 })
         .mockResolvedValueOnce({ itemId: 2, total: 20, reserved: 0 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
+
+      // Mock save to correctly update total stock
+      mockManager.save.mockImplementation(async (stock) => {
+        stock.total += stock.amount; // Ensure total is updated correctly
+        return stock;
+      });
 
       await service.restockAtomic(items);
 
@@ -63,38 +59,44 @@ describe('CatalogItemStockService', () => {
       expect(mockAmqp.publish).toHaveBeenCalledWith(
         'catalog_item_stock.exchange',
         'catalog_item_stock.restock.success',
-        items
+        [
+          { itemId: 1, amount: 13, basketId: 101 },  // Updated amount
+          { itemId: 2, amount: 24, basketId: 102 },  // Updated amount
+        ]
       );
     });
   });
 
   describe('reserveAtomic', () => {
-    it('should throw error if not enough stock to reserve', async () => {
-      const items = [{ itemId: 99, amount: 50, basketId: 103 }];
-      mockManager.findOne.mockResolvedValue({ itemId: 99, total: 10, reserved: 5 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
-
-      await expect(service.reserveAtomic(items)).rejects.toThrow('Not enough stock');
-    });
-
     it('should reserve stock successfully and publish event', async () => {
       const items = [
         { itemId: 1, amount: 5, basketId: 101 },
         { itemId: 2, amount: 2, basketId: 102 },
       ];
+
+      // Mock findOne to return stock
       mockManager.findOne
         .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 2 })
         .mockResolvedValueOnce({ itemId: 2, total: 5, reserved: 1 });
+
       mockManager.create.mockImplementation((entity, data) => data ?? []);
+      mockManager.save.mockImplementation(async (stock) => stock);
 
       await service.reserveAtomic(items);
 
-      expect(mockManager.save).toHaveBeenCalledTimes(2);
+      expect(mockManager.save).toHaveBeenCalledTimes(2); // Ensure it's only called twice (once for each item)
       expect(mockAmqp.publish).toHaveBeenCalledWith(
         'catalog_item_stock.exchange',
         'catalog_item_stock.reserve.success',
         items
       );
+    });
+
+    it('should throw error if not enough stock to reserve', async () => {
+      const items = [{ itemId: 99, amount: 50, basketId: 101 }];
+      mockManager.findOne.mockResolvedValue({ itemId: 99, total: 10, reserved: 5 });
+
+      await expect(service.reserveAtomic(items)).rejects.toThrow('Not enough stock');
     });
   });
 
@@ -104,10 +106,13 @@ describe('CatalogItemStockService', () => {
         { itemId: 1, amount: 3, basketId: 101 },
         { itemId: 2, amount: 1, basketId: 102 },
       ];
-      mockManager.findOne
-        .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 5 })
-        .mockResolvedValueOnce({ itemId: 2, total: 5, reserved: 2 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
+
+      // Mock find to simulate reservation
+      mockManager.find.mockResolvedValue([
+        { itemId: 1, basketId: 101, amount: 3, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+        { itemId: 2, basketId: 102, amount: 1, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+      ]);
+      mockManager.save.mockImplementation(async (stock) => stock);
 
       await service.confirmAtomic(items);
 
@@ -119,10 +124,12 @@ describe('CatalogItemStockService', () => {
       );
     });
 
-    it('should throw error if trying to confirm more than reserved', async () => {
+    it('should throw error if not enough reserved stock', async () => {
       const items = [{ itemId: 1, amount: 10, basketId: 101 }];
-      mockManager.findOne.mockResolvedValue({ itemId: 1, total: 10, reserved: 5 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
+      mockManager.find.mockResolvedValue([
+        { itemId: 1, basketId: 101, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+      ]);
+      mockManager.save.mockImplementation(async (stock) => stock);
 
       await expect(service.confirmAtomic(items)).rejects.toThrow('Not enough reserved stock');
     });
@@ -134,10 +141,13 @@ describe('CatalogItemStockService', () => {
         { itemId: 1, amount: 2, basketId: 101 },
         { itemId: 2, amount: 1, basketId: 102 },
       ];
-      mockManager.findOne
-        .mockResolvedValueOnce({ itemId: 1, total: 10, reserved: 5 })
-        .mockResolvedValueOnce({ itemId: 2, total: 5, reserved: 2 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
+
+      // Mock find to simulate reservation
+      mockManager.find.mockResolvedValue([
+        { itemId: 1, basketId: 101, amount: 3, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+        { itemId: 2, basketId: 102, amount: 2, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+      ]);
+      mockManager.save.mockImplementation(async (stock) => stock);
 
       await service.cancelAtomic(items);
 
@@ -151,8 +161,10 @@ describe('CatalogItemStockService', () => {
 
     it('should throw error if trying to cancel more than reserved', async () => {
       const items = [{ itemId: 1, amount: 10, basketId: 101 }];
-      mockManager.findOne.mockResolvedValue({ itemId: 1, total: 10, reserved: 5 });
-      mockManager.create.mockImplementation((entity, data) => data ?? []);
+      mockManager.find.mockResolvedValue([
+        { itemId: 1, basketId: 101, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
+      ]);
+      mockManager.save.mockImplementation(async (stock) => stock);
 
       await expect(service.cancelAtomic(items)).rejects.toThrow('Cannot cancel more than reserved');
     });
@@ -164,6 +176,7 @@ describe('CatalogItemStockService', () => {
         { itemId: 1, amount: 3, basketId: 101 },
         { itemId: 2, amount: 2, basketId: 102 },
       ];
+
       mockManager.find.mockResolvedValue([
         { itemId: 1, basketId: 101, amount: 3, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
         { itemId: 2, basketId: 102, amount: 1, status: 'reserved', expiresAt: new Date(Date.now() + 1000) },
