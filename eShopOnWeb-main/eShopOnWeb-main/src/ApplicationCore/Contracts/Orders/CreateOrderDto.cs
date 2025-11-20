@@ -10,6 +10,8 @@ public class CreateOrderDto
 {
     [JsonPropertyName("buyer_id")]
     public string BuyerId { get; set; }
+    [JsonPropertyName("basket_id")]
+    public int BasketId { get; set; }
 
     [JsonPropertyName("shipping")]
     public ShippingAddressDto Shipping { get; set; }

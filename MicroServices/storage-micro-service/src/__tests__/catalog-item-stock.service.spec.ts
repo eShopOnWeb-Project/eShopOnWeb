@@ -48,10 +48,10 @@ describe('CatalogItemStockService', () => {
     expect(mockDataSource.getRepository).toHaveBeenCalled();
   });
 
-  it('should publish event after successful restock', async () => {
+  it('should publish event after successful restock even without basket ids', async () => {
     const items: DefaultDTOItem[] = [
-      { itemId: 1, amount: 3, basketId: 1 },
-      { itemId: 2, amount: 4, basketId: 1 },
+      { itemId: 1, amount: 3, basketId: undefined as any },
+      { itemId: 2, amount: 4, basketId: undefined as any },
     ];
     const stock1 = { id: 1, itemId: 1, total: 10, reserved: 0 };
     const stock2 = { id: 2, itemId: 2, total: 20, reserved: 0 };
@@ -61,8 +61,8 @@ describe('CatalogItemStockService', () => {
     mockManager.create.mockImplementation((entity, data) => data ?? ({} as any));
 
     const updatedStock: DefaultDTOItem[] = [
-      { itemId: 1, amount: 13, basketId: 1 },
-      { itemId: 2, amount: 24, basketId: 1 },
+      { itemId: 1, amount: 13, basketId: null as any },
+      { itemId: 2, amount: 24, basketId: null as any },
     ];
 
     await service.restockAtomic(items);

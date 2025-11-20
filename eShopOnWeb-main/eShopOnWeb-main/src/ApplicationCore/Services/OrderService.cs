@@ -64,6 +64,7 @@ public class OrderService : IOrderService
         var createOrderDto = new CreateOrderDto
         {
             BuyerId = basket.BuyerId,
+            BasketId = basketId,
             Shipping = new ShippingAddressDto
             {
                 Street = shippingAddress.Street,

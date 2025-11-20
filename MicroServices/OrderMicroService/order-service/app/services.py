@@ -46,8 +46,24 @@ async def create_order(db: AsyncSession, order_in: schemas.OrderCreate) -> schem
         )
 
     db.add(order)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "Database failure while creating order buyer_id=%s basket_id=%s",
+            order_in.buyer_id,
+            order_in.basket_id,
+        )
+        raise
     await db.refresh(order)
+
+    logger.info(
+        "Created order id=%s buyer_id=%s item_count=%s",
+        order.id,
+        order.buyer_id,
+        len(order.items),
+    )
 
     # Compute total
     total_amount = calculate_total(order.items)
@@ -56,7 +72,8 @@ async def create_order(db: AsyncSession, order_in: schemas.OrderCreate) -> schem
     confirm_items = [
         schemas.EventItem(
             itemId=it.itemordered_catalogitemid,
-            amount=it.units
+            amount=it.units,
+            basketId=order_in.basket_id
         )
         for it in order.items
     ]
@@ -93,8 +110,10 @@ async def create_order(db: AsyncSession, order_in: schemas.OrderCreate) -> schem
 async def safe_publish(routing_key, payload):
     try:
         await events.publisher.publish(routing_key, payload)
-    except Exception as e:
-        logger.error(f"Failed to publish event '{routing_key}': {e}")
+        payload_size = len(payload) if hasattr(payload, "__len__") else "unknown"
+        logger.debug("Published event routing_key=%s payload_size=%s", routing_key, payload_size)
+    except Exception:
+        logger.exception("Failed to publish event '%s'", routing_key)
 
 # -----------------------
 # Get single order by ID
@@ -103,6 +122,7 @@ async def get_order(db: AsyncSession, order_id: int) -> schemas.OrderRead | None
     result = await db.execute(select(models.Order).where(models.Order.id == order_id))
     order = result.scalars().first()
     if not order:
+        logger.debug("Order id=%s not found in database", order_id)
         return None
 
     total_amount = calculate_total(order.items)
@@ -143,6 +163,7 @@ async def list_orders_for_buyer(db: AsyncSession, buyer_id: str) -> list[schemas
         .order_by(models.Order.order_date.desc())
     )
     orders = result.scalars().all()
+    logger.info("Fetched %s orders for buyer_id=%s", len(orders), buyer_id)
 
     return [
         schemas.OrderRead(

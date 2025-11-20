@@ -22,6 +22,7 @@ class Shipping(BaseModel):
 
 class OrderCreate(BaseModel):
     buyer_id: str
+    basket_id: int
     shipping: Shipping
     items: List[OrderItemCreate]
 
@@ -54,3 +55,4 @@ class OrderRead(BaseModel):
 class EventItem(BaseModel):
     itemId: int
     amount: int
+    basketId: int

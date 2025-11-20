@@ -30,8 +30,10 @@ export class CatalogItemStockService {
       stocks: CatalogItemStock[],
       save: (s: CatalogItemStock) => Promise<void>,
       manager: any
-    ) => Promise<T>
+    ) => Promise<T>,
+    options?: { requireBasketId?: boolean }
   ): Promise<T> {
+    const { requireBasketId = true } = options ?? {};
     if (!items || items.length === 0) {
       throw new InvalidInputError('Items array cannot be empty');
     }
@@ -43,7 +45,11 @@ export class CatalogItemStockService {
       if (item.amount < 0) {
         throw new InvalidInputError(`Invalid amount: ${item.amount} for itemId ${item.itemId}`, { item });
       }
-      if (!item.basketId || item.basketId <= 0) {
+      if (requireBasketId) {
+        if (!item.basketId || item.basketId <= 0) {
+          throw new InvalidInputError(`Invalid basketId: ${item.basketId} for itemId ${item.itemId}`, { item });
+        }
+      } else if (item.basketId !== undefined && item.basketId < 0) {
         throw new InvalidInputError(`Invalid basketId: ${item.basketId} for itemId ${item.itemId}`, { item });
       }
     }
@@ -145,7 +151,9 @@ export class CatalogItemStockService {
   async restockAtomic(items: DefaultDTOItem[]) {
     this.logger.log(`Starting restock operation for ${items.length} item(s)`);
     try {
-      await this.withLockedItems(items, async (stocks, save) => {
+      await this.withLockedItems(
+        items,
+        async (stocks, save) => {
         const updatedStock: DefaultDTOItem[] = [];
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
@@ -159,12 +167,14 @@ export class CatalogItemStockService {
           updatedStock.push({
             itemId: stock.itemId,
             amount: stock.total,
-            basketId: item.basketId,
+              basketId: item.basketId ?? null,
           });
         }
 
         await this.publishEvent('restock.success', updatedStock);
-      });
+        },
+        { requireBasketId: false }
+      );
       this.logger.log(`Successfully completed restock operation for ${items.length} item(s)`);
     } catch (error) {
       if (error instanceof InsufficientStockError || error instanceof DatabaseOperationError || error instanceof EventPublishError || error instanceof InvalidInputError) {
