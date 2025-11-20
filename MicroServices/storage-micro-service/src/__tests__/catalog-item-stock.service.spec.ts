@@ -1,10 +1,7 @@
 import { CatalogItemStockService } from '../stock/catalog-item-stock.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { DataSource, EntityManager } from 'typeorm';
-import { CatalogItemStock } from '../stock/entities/catalog-item-stock.entity';
-import { Reservation } from '../stock/entities/reservation.entity';
 import { DefaultDTOItem } from '../stock/dto/default-dto-item.interface';
-import { FullDTOItem } from '../stock/dto/full-dto-item.interface';
 
 jest.mock('@golevelup/nestjs-rabbitmq');
 jest.mock('typeorm');
