@@ -59,44 +59,12 @@ public partial class List : BlazorComponent
     {
         if (firstRender)
         {
-            // Load catalog and related data
-            catalogItems = await CatalogItemService.List();
-            catalogTypes = await CatalogTypeService.List();
-            catalogBrands = await CatalogBrandService.List();
-
-            foreach (var item in catalogItems)
-                restockAmounts[item.Id] = 1;
-
-            if (hubConnection != null)
-            {
-                try
-                {
-                    var fullStock = await hubConnection.InvokeAsync<List<RabbitMQFullDTOItem>>("GetStockCacheAsync");
-                    if (fullStock != null)
-                    {
-                        foreach (var stock in fullStock)
-                        {
-                            var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.itemId);
-                            if (existing != null)
-                            {
-                                existing.Total = stock.total;
-                                existing.Reserved = stock.reserved;
-                            }
-                        }
-                        StateHasChanged();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error fetching initial stock: {ex.Message}");
-                }
-            }
-
-            CallRequestRefresh();
+            await ReloadCatalogItemsAndStock();
         }
 
         await base.OnAfterRenderAsync(firstRender);
     }
+
                                                   
     private async Task RestockClick(int itemId)
     {
@@ -128,11 +96,40 @@ public partial class List : BlazorComponent
     private async Task EditClick(int id) => await EditComponent.Open(id);
     private async Task DeleteClick(int id) => await DeleteComponent.Open(id);
 
-    private async Task ReloadCatalogItems()
+    private async Task ReloadCatalogItemsAndStock()
     {
         catalogItems = await CatalogItemService.List();
+        catalogTypes = await CatalogTypeService.List();
+        catalogBrands = await CatalogBrandService.List();
+
         foreach (var item in catalogItems)
             restockAmounts[item.Id] = 1;
-        StateHasChanged();
+
+        if (hubConnection != null)
+        {
+            try
+            {
+                var fullStock = await hubConnection.InvokeAsync<List<RabbitMQFullDTOItem>>("GetStockCacheAsync");
+                if (fullStock != null)
+                {
+                    foreach (var stock in fullStock)
+                    {
+                        var existing = catalogItems.FirstOrDefault(ci => ci.Id == stock.itemId);
+                        if (existing != null)
+                        {
+                            existing.Total = stock.total;
+                            existing.Reserved = stock.reserved;
+                        }
+                    }
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching initial stock: {ex.Message}");
+            }
+        }
+
+        CallRequestRefresh();
     }
 }
