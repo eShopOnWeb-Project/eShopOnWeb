@@ -12,4 +12,6 @@ public class RabbitMQDefaultDTOItem
     public int itemId { get; set; }
     [JsonProperty("amount")]
     public int amount { get; set; }
+    [JsonProperty("basketId")]
+    public int basketId { get; set; }
 }

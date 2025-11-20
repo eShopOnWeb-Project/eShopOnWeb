@@ -49,7 +49,7 @@ public static class Dependencies
         services.AddSingleton<IRabbitMqService>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
-            return new RabbitMqStockService(options);
+            return new RabbitMqService(options);
         });
     }
 }

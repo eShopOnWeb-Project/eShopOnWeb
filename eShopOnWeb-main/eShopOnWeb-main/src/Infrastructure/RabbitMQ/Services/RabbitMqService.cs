@@ -11,11 +11,11 @@ using RabbitMQ.Client.Events;
 
 namespace Microsoft.eShopWeb.Infrastructure.RabbitMQ.Services;
 
-public class RabbitMqStockService : IRabbitMqService
+public class RabbitMqService : IRabbitMqService
 {
     private readonly ConnectionFactory _factory;
 
-    public RabbitMqStockService(RabbitMqOptions options)
+    public RabbitMqService(RabbitMqOptions options)
     {
         _factory = new ConnectionFactory
         {
@@ -120,6 +120,56 @@ public class RabbitMqStockService : IRabbitMqService
         await channel.BasicPublishAsync(
             exchange: "catalog_item_stock.exchange",
             routingKey: "catalog_item_stock.getall",
+            mandatory: true,
+            basicProperties: props,
+            body: body
+        );
+
+        var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        if (completedTask != tcs.Task)
+            throw new TimeoutException("RPC request timed out waiting for response");
+
+        return await tcs.Task;
+    }
+
+    public async Task<CheckActiveReservationsResponse> CheckActiveReservationsAsync(List<RabbitMQDefaultDTOItem> items)
+    {
+        await using var connection = await _factory.CreateConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync();
+
+        var replyQueue = await channel.QueueDeclareAsync("", exclusive: true);
+        var correlationId = Guid.NewGuid().ToString();
+        var tcs = new TaskCompletionSource<CheckActiveReservationsResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var consumer = new AsyncEventingBasicConsumer(channel);
+        consumer.ReceivedAsync += async (sender, ea) =>
+        {
+            if (ea.BasicProperties.CorrelationId == correlationId)
+            {
+                var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+                var response = JsonSerializer.Deserialize<CheckActiveReservationsResponse>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                tcs.TrySetResult(response!);
+            }
+            await Task.Yield();
+        };
+
+        await channel.BasicConsumeAsync(replyQueue.QueueName, autoAck: true, consumer: consumer);
+
+        var messageBody = JsonSerializer.Serialize(items);
+        var body = Encoding.UTF8.GetBytes(messageBody);
+
+        var props = new BasicProperties
+        {
+            CorrelationId = correlationId,
+            ReplyTo = replyQueue.QueueName
+        };
+
+        await channel.BasicPublishAsync(
+            exchange: "catalog_item_stock.exchange",
+            routingKey: "catalog_item_stock.check_active_reservations",
             mandatory: true,
             basicProperties: props,
             body: body

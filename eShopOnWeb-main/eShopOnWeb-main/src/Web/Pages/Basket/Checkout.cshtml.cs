@@ -47,13 +47,15 @@ public class CheckoutModel : PageModel
 
         try
         {
-            var rpcItems = BasketModel.Items.Select(i => new RabbitMQDefaultDTOItem
+            
+            var dtoItems = BasketModel.Items.Select(i => new RabbitMQDefaultDTOItem
             {
                 itemId = i.CatalogItemId,
-                amount = i.Quantity
+                amount = i.Quantity,
+                basketId = BasketModel.Id
             }).ToList();
 
-            var response = await _rabbitMqService.ReserveAsync(rpcItems);
+            var response = await _rabbitMqService.ReserveAsync(dtoItems);
             if (!response.success)
             {
                 TempData["Error"] = $"Reservation failed: {response.reason}          [HELP: go to admin page to restock more items ]";
@@ -84,6 +86,14 @@ public class CheckoutModel : PageModel
             var updateModel = items.ToDictionary(b => b.Id.ToString(), b => b.Quantity);
             
             await _basketClient.SetQuantities(BasketModel.Id, updateModel);
+
+            var checkResult = await CheckActiveReservationsAsync();
+            if (!checkResult.success)
+            {
+                TempData["Error"] = "Reservation expired or cancelled for some items. Please update your basket.";
+                return RedirectToPage("/Basket/Index");
+            }
+
             await _orderService.CreateOrderAsync(BasketModel.Id, new Address("123 Main St.", "Kent", "OH", "United States", "44240"));
             await _basketClient.DeleteBasketAsync(BasketModel.Id);
         }
@@ -109,13 +119,14 @@ public class CheckoutModel : PageModel
                 return BadRequest();
             }
 
-            var rpcItems = BasketModel.Items.Select(i => new RabbitMQDefaultDTOItem
+            var dtoItems = BasketModel.Items.Select(i => new RabbitMQDefaultDTOItem
             {
                 itemId = i.CatalogItemId,
-                amount = i.Quantity
+                amount = i.Quantity,
+                basketId = BasketModel.Id
             }).ToList();
 
-            await _rabbitMqService.SendCancelAsync(rpcItems);
+            await _rabbitMqService.SendCancelAsync(dtoItems);
         }
         catch (Exception e)
         {
@@ -123,6 +134,19 @@ public class CheckoutModel : PageModel
         }
 
         return RedirectToPage("/Basket/Index");
+    }
+
+    private async Task<CheckActiveReservationsResponse> CheckActiveReservationsAsync()
+    {
+        var dtoItems = BasketModel.Items.Select(i => new RabbitMQDefaultDTOItem
+        {
+            itemId = i.CatalogItemId,
+            amount = i.Quantity,
+            basketId = BasketModel.Id
+        }).ToList();
+        var checkResult = await _rabbitMqService.CheckActiveReservationsAsync(dtoItems);
+
+        return checkResult;
     }
 
     private async Task SetBasketModelAsync()

@@ -4,6 +4,7 @@ import { DataSource, LessThan } from 'typeorm';
 import { CatalogItemStock } from '../entities/catalog-item-stock.entity';
 import { Reservation } from '../entities/reservation.entity';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import { DefaultDTOItem } from '../dto/default-dto-item.interface';
 
 @Injectable()
 export class ReservationCleanupCronService {
@@ -19,6 +20,8 @@ export class ReservationCleanupCronService {
     const now = new Date();
     this.logger.debug(`Checking for expired reservations at ${now.toISOString()}`);
 
+    const releasedItems: DefaultDTOItem[] = [];
+
     await this.dataSource.transaction(async (manager) => {
       const expiredReservations = await manager.find(Reservation, {
         where: {
@@ -32,7 +35,9 @@ export class ReservationCleanupCronService {
         return;
       }
 
-      this.logger.log(`Found ${expiredReservations.length} expired reservations to release.`);
+      this.logger.log(
+        `Found ${expiredReservations.length} expired reservations to release.`,
+      );
 
       for (const res of expiredReservations) {
         const stock = await manager.findOne(CatalogItemStock, {
@@ -45,20 +50,36 @@ export class ReservationCleanupCronService {
           if (stock.reserved < 0) stock.reserved = 0;
           await manager.save(stock);
         } else {
-          this.logger.warn(`Stock not found for itemId ${res.itemId} while releasing expired reservation.`);
+          this.logger.warn(
+            `Stock not found for itemId ${res.itemId} while releasing expired reservation.`,
+          );
         }
 
         res.status = 'cancelled';
         await manager.save(res);
 
-        await this.amqpConnection.publish(
-          'catalog_item_stock.exchange',
-          'catalog_item_stock.reservation.expired',
-          { itemId: res.itemId, amount: res.amount },
-        );
+        releasedItems.push({
+          itemId: res.itemId,
+          amount: res.amount,
+          basketId: res.basketId,
+        });
 
-        this.logger.log(`Released expired reservation id=${res.id} for itemId=${res.itemId}`);
+        this.logger.log(
+          `Released expired reservation id=${res.id} for itemId=${res.itemId} basketId=${res.basketId} amount=${res.amount}`,
+        );
       }
     });
+
+    if (releasedItems.length > 0) {
+      await this.amqpConnection.publish(
+        'catalog_item_stock.exchange',
+        'catalog_item_stock.reservation.expired',
+        releasedItems,
+      );
+
+      this.logger.log(
+        `Published batch expiration event with ${releasedItems.length} items.`,
+      );
+    }
   }
 }

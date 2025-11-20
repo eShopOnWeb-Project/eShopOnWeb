@@ -12,4 +12,5 @@ public interface IRabbitMqService
     Task SendCancelAsync(List<RabbitMQDefaultDTOItem> items);
     Task SendRestockAsync(List<RabbitMQDefaultDTOItem> items);
     Task<List<RabbitMQFullDTOItem>> GetFullStockAsync();
+    Task<CheckActiveReservationsResponse> CheckActiveReservationsAsync(List<RabbitMQDefaultDTOItem> items);
 }

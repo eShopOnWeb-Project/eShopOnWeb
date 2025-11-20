@@ -17,8 +17,9 @@ public class RabbitMqStockUpdateSubscriber : BackgroundService
     private readonly IHubContext<StockHub> _hub;
     private readonly ConnectionFactory _factory;
     private readonly StockCache _cache;
+    private readonly ILogger<RabbitMqStockUpdateSubscriber> _logger;
 
-    public RabbitMqStockUpdateSubscriber(IHubContext<StockHub> hub, IOptions<RabbitMqOptions> options, StockCache cache)
+    public RabbitMqStockUpdateSubscriber(IHubContext<StockHub> hub, IOptions<RabbitMqOptions> options, StockCache cache, ILogger<RabbitMqStockUpdateSubscriber> logger)
     {
         _hub = hub;
         _cache = cache;
@@ -30,6 +31,8 @@ public class RabbitMqStockUpdateSubscriber : BackgroundService
             Password = options.Value.Password,
             Port = options.Value.Port
         };
+        _logger = logger;
+
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -44,7 +47,8 @@ public class RabbitMqStockUpdateSubscriber : BackgroundService
             "catalog_item_stock.restock.success",
             "catalog_item_stock.reserve.success",
             "catalog_item_stock.cancel.success",
-            "catalog_item_stock.confirm.success"
+            "catalog_item_stock.confirm.success",
+            "catalog_item_stock.reservation.expired"
         };
 
         foreach (var key in routingKeys)
@@ -85,20 +89,30 @@ public class RabbitMqStockUpdateSubscriber : BackgroundService
     {
         var stock = _cache.Get(msg.itemId) ?? new RabbitMQFullDTOItem(msg.itemId, 0, 0);
 
+        _logger.LogInformation("Handling stock update for ItemId: {ItemId}, RoutingKey: {RoutingKey}, Current Stock: Total={Total}, Reserved={Reserved}, Amount={Amount}",
+            msg.itemId, routingKey, stock.total, stock.reserved, msg.amount);
+
         RabbitMQFullDTOItem updatedStock = routingKey switch
         {
-            "catalog_item_stock.restock.success" => stock with { total = stock.total + msg.amount },
-            "catalog_item_stock.reserve.success" => stock with { reserved = stock.reserved + msg.amount },
-            "catalog_item_stock.cancel.success"  => stock with { reserved = stock.reserved - msg.amount },
+            "catalog_item_stock.restock.success" => stock with { total = msg.amount },
+            "catalog_item_stock.reserve.success" => stock with { reserved = msg.amount },
+            "catalog_item_stock.cancel.success" => stock with { reserved = stock.reserved - msg.amount },
             "catalog_item_stock.confirm.success" => stock with
             {
                 reserved = stock.reserved - msg.amount,
                 total = stock.total - msg.amount
             },
+            "catalog_item_stock.reservation.expired" => stock with { reserved = stock.reserved - msg.amount },
             _ => stock
         };
 
+        if (updatedStock.reserved < 0)
+            updatedStock = updatedStock with { reserved = 0 };
+
         _cache.Update(msg.itemId, updatedStock.total, updatedStock.reserved);
+
+        _logger.LogInformation("Updated stock for ItemId: {ItemId}, New Stock: Total={Total}, Reserved={Reserved}",
+            msg.itemId, updatedStock.total, updatedStock.reserved);
 
         await _hub.Clients.All.SendAsync("StockUpdated", updatedStock);
     }

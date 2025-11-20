@@ -9,6 +9,9 @@ export class Reservation {
   itemId: number;
 
   @Column('int')
+  basketId: number;
+
+  @Column('int')
   amount: number;
 
   @Column('timestamp')

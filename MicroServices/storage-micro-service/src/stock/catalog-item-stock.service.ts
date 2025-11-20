@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { DataSource, LessThan } from 'typeorm';
+import { DataSource, LessThan, MoreThan, In } from 'typeorm';
 import { CatalogItemStock } from './entities/catalog-item-stock.entity';
 import { Reservation } from './entities/reservation.entity';
-import { DefaultDTOItem, FullDTOItem } from './catalog-item-stock.consumer';
+import { DefaultDTOItem } from './dto/default-dto-item.interface';
+import { FullDTOItem } from './dto/full-dto-item.interface';
 
 @Injectable()
 export class CatalogItemStockService {
@@ -66,14 +67,22 @@ export class CatalogItemStockService {
 
   async restockAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save) => {
+
+      const updatedStock: DefaultDTOItem[] = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const stock = stocks[i];
         stock.total += item.amount;
         await save(stock);
+
+        updatedStock.push({
+          itemId: stock.itemId,
+          amount: stock.total,
+          basketId: item.basketId,
+        });
       }
 
-      await this.publishEvent('restock.success', items);
+      await this.publishEvent('restock.success', updatedStock);
     });
   }
 
@@ -83,29 +92,91 @@ export class CatalogItemStockService {
         const item = items[i];
         const stock = stocks[i];
         const available = stock.total - stock.reserved;
-        if (available < item.amount) {
+        const newReserveAmount = item.amount - stock.reserved;
+        if (available < newReserveAmount) {
           throw new Error(`Not enough stock for item ${item.itemId}. Available: ${available}`);
         }
       }
 
+      const results: DefaultDTOItem[] = [];
+
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const stock = stocks[i];
-        stock.reserved += item.amount;
+
+        console.log(`Checking existing reservation for basketId=${item.basketId}, itemId=${item.itemId}`);
+
+        let reservation = await manager.findOne(Reservation, {
+          where: {
+            basketId: item.basketId,
+            itemId: item.itemId,
+            status: 'reserved',
+            expiresAt: MoreThan(new Date()),
+          },
+        });
+
+        if (reservation) {
+          console.log(`Found existing reservation id=${reservation.id} with amount=${reservation.amount}`);
+
+          const amountDiff = item.amount - reservation.amount;
+
+          if (amountDiff > 0) {
+            if ((stock.total - stock.reserved) < amountDiff) {
+              throw new Error(`Not enough stock to increase reservation for item ${item.itemId}.`);
+            }
+
+            reservation.amount = item.amount;
+            console.log(`New Reservation amount for reservation id=${reservation.id} with amount=${reservation.amount}`);
+            reservation.expiresAt = new Date(Date.now() + 1 * 60 * 1000);
+            await manager.save(reservation);
+
+            stock.reserved += amountDiff;
+            console.log(`New Reserved amount for stock id=${stock.id} with amount=${stock.reserved}`);
+          } else if (amountDiff < 0) {
+            stock.reserved -= Math.abs(amountDiff);
+
+            if (stock.reserved < 0) stock.reserved = 0;
+
+            reservation.amount = item.amount;
+            reservation.expiresAt = new Date(Date.now() + 1 * 60 * 1000);
+
+            if (reservation.amount === 0) {
+              reservation.status = 'cancelled';
+            }
+
+            await manager.save(reservation);
+          }
+
+        } else {
+          console.log(`No existing reservation found - creating new for basketId=${item.basketId}, itemId=${item.itemId}`);
+
+          reservation = manager.create(Reservation, {
+            itemId: item.itemId,
+            basketId: item.basketId,
+            amount: item.amount,
+            expiresAt: new Date(Date.now() + 1 * 60 * 1000),
+            status: 'reserved',
+          });
+
+          await manager.save(reservation);
+
+          stock.reserved += item.amount;
+        }
+
         await save(stock);
 
-        const reservation = manager.create(Reservation, {
-          itemId: item.itemId,
-          amount: item.amount,
-          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-          status: 'reserved',
+        results.push({
+          itemId: stock.itemId,
+          amount: stock.reserved,
+          basketId: reservation.basketId,
         });
-        await manager.save(reservation);
       }
 
-      await this.publishEvent('reserve.success', items);
+      await this.publishEvent('reserve.success', results);
     });
   }
+
+
 
   async confirmAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save, manager) => {
@@ -168,59 +239,100 @@ export class CatalogItemStockService {
 
   async cancelAtomic(items: DefaultDTOItem[]) {
     await this.withLockedItems(items, async (stocks, save, manager) => {
-      for (const item of items) {
-        const totalReserved = stocks.find(s => s.itemId === item.itemId)?.reserved || 0;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const stock = stocks[i];
+
+        console.log(`Checking existing reservation for basketId=${item.basketId}, itemId=${item.itemId}`);
+
+        const totalReserved = stock.reserved;
         if (totalReserved < item.amount) {
           throw new Error(`Cannot cancel more than reserved for item ${item.itemId}. Reserved: ${totalReserved}`);
         }
 
-        let amountToCancel = item.amount;
-
         const reservations = await manager.find(Reservation, {
-          where: { itemId: item.itemId, status: 'reserved' },
-          order: { expiresAt: 'ASC' },
+          where: {
+            itemId: item.itemId,
+            basketId: item.basketId,
+            status: 'reserved',
+          },
           lock: { mode: 'pessimistic_write' },
         });
+
+        if (reservations.length === 0) {
+          throw new Error(`No active reservation found for item ${item.itemId} in basket ${item.basketId}.`);
+        }
+
+        let amountToCancel = item.amount;
 
         for (const res of reservations) {
           if (amountToCancel <= 0) break;
 
-          const usedAmount = Math.min(res.amount, amountToCancel);
-          res.amount -= usedAmount;
+          if (res.amount > 0) {
+            res.status = 'cancelled'; 
+            await manager.save(res);
 
-          if (res.amount === 0) {
-            res.status = 'cancelled';
-          } else {
-            const newRes = manager.create(Reservation, {
-              itemId: res.itemId,
-              amount: res.amount,
-              expiresAt: res.expiresAt,
-              status: 'reserved',
-            });
-            await manager.save(newRes);
-
-            res.amount = usedAmount;
-            res.status = 'cancelled';
+            amountToCancel -= res.amount;
           }
-          await manager.save(res);
-
-          amountToCancel -= usedAmount;
         }
 
         if (amountToCancel > 0) {
-          throw new Error(`Reservation mismatch for item ${item.itemId}, not enough reserved amount to cancel.`);
+          throw new Error(`Not enough reserved items to cancel for item ${item.itemId}. Cancellation amount exceeds reserved stock.`);
         }
-      }
 
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const stock = stocks[i];
         stock.reserved -= item.amount;
         if (stock.reserved < 0) stock.reserved = 0;
+
         await save(stock);
+
+        console.log(`Successfully cancelled all reservations for basketId=${item.basketId}, itemId=${item.itemId}, amount=${item.amount}`);
       }
 
       await this.publishEvent('cancel.success', items);
     });
   }
+
+
+  async checkActiveReservations(items: DefaultDTOItem[]): Promise<{ success: boolean; missingItems: number[] }> {
+    if (items.length === 0) {
+      return { success: true, missingItems: [] };
+    }
+
+    const basketId = items[0].basketId;
+
+    if (!items.every(item => item.basketId === basketId)) {
+      throw new Error('All items must have the same basketId');
+    }
+
+    const manager = this.dataSource.manager;
+
+    const activeReservations = await manager.find(Reservation, {
+      where: {
+        basketId: basketId,
+        itemId: In(items.map(i => i.itemId)),
+        status: 'reserved',
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+
+    const missingItems: number[] = [];
+
+    for (const item of items) {
+      const totalReserved = activeReservations
+        .filter(r => r.itemId === item.itemId)
+        .reduce((sum, r) => sum + r.amount, 0);
+
+      if (totalReserved < item.amount) {
+        missingItems.push(item.itemId);
+      }
+    }
+
+    return {
+      success: missingItems.length === 0,
+      missingItems,
+    };
+  }
+
+
+
 }

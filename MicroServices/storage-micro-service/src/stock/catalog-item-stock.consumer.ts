@@ -1,17 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { RabbitSubscribe, RabbitRPC } from '@golevelup/nestjs-rabbitmq';
 import { CatalogItemStockService } from './catalog-item-stock.service';
-
-export interface DefaultDTOItem {
-  itemId: number;
-  amount: number;
-}
-
-export interface FullDTOItem {
-  itemId: number;
-  total: number;
-  reserved: number;
-}
+import { DefaultDTOItem } from './dto/default-dto-item.interface';
+import { FullDTOItem } from './dto/full-dto-item.interface';
 
 @Injectable()
 export class CatalogItemStockConsumer {
@@ -29,6 +20,21 @@ export class CatalogItemStockConsumer {
       console.log('Restock batch success');
     } catch (err: any) {
       console.error(`Restock batch failed: ${err.message}`);
+    }
+  }
+
+  @RabbitRPC({
+    exchange: 'catalog_item_stock.exchange',
+    routingKey: 'catalog_item_stock.check_active_reservations',
+    queue: 'catalog_item_stock_check_active_reservations_rpc_queue',
+  })
+  async handleCheckActiveReservations(msg: DefaultDTOItem[]): Promise<{ success: boolean; missingItems: number[] }> {
+    try {
+      const result = await this.stockService.checkActiveReservations(msg);
+      return result;
+    } catch (err) {
+      console.error(`Check active reservations failed: ${err.message}`);
+      return { success: false, missingItems: [] };
     }
   }
 
