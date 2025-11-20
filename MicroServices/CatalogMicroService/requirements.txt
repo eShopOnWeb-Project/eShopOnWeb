@@ -3,6 +3,7 @@ uvicorn[standard] # ASGI server
 pydantic # For data validation and settings management
 python-dotenv # For environment variable management
 sqlmodel # ORM
+SQLAlchemy # Explicit SQL toolkit dependency for linting
 asyncpg # PostgreSQL driver
 alembic # For database migrations
 pytest 

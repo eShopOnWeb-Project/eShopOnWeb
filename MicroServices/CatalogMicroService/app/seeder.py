@@ -1,8 +1,16 @@
-from sqlmodel import select
+import logging
+
+from sqlalchemy.exc import SQLAlchemyError  # type: ignore[import]
+from sqlalchemy.ext.asyncio import AsyncSession  # type: ignore[import]
+from sqlmodel import select  # type: ignore[import]
+
+from app.core.exceptions import DatabaseOperationError
 from app.models import CatalogBrand, CatalogType, CatalogItem
-from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 async def seed_catalog_brands(session: AsyncSession):
+    logger.debug("Seeding catalog brands")
     brands_to_add = [
         CatalogBrand(brand="Azure"),
         CatalogBrand(brand=".NET"),
@@ -11,14 +19,21 @@ async def seed_catalog_brands(session: AsyncSession):
         CatalogBrand(brand="Other")
     ]
     
-    for brand in brands_to_add:
-        result = await session.execute(select(CatalogBrand).where(CatalogBrand.brand == brand.brand))
-        if not result.scalars().first():  
-            session.add(brand)
-    
-    await session.commit()
+    try:
+        for brand in brands_to_add:
+            result = await session.execute(select(CatalogBrand).where(CatalogBrand.brand == brand.brand))
+            if not result.scalars().first():
+                session.add(brand)
+
+        await session.commit()
+    except SQLAlchemyError as exc:
+        await session.rollback()
+        logger.exception("Failed to seed catalog brands")
+        raise DatabaseOperationError("Failed to seed catalog brands") from exc
+    logger.info("Catalog brands ensured")
 
 async def seed_catalog_types(session: AsyncSession):
+    logger.debug("Seeding catalog types")
     types_to_add = [
         CatalogType(type="Mug"),
         CatalogType(type="T-Shirt"),
@@ -26,14 +41,21 @@ async def seed_catalog_types(session: AsyncSession):
         CatalogType(type="USB Memory Stick")
     ]
     
-    for catalog_type in types_to_add:
-        result = await session.execute(select(CatalogType).where(CatalogType.type == catalog_type.type))
-        if not result.scalars().first(): 
-            session.add(catalog_type)
-    
-    await session.commit()
+    try:
+        for catalog_type in types_to_add:
+            result = await session.execute(select(CatalogType).where(CatalogType.type == catalog_type.type))
+            if not result.scalars().first():
+                session.add(catalog_type)
+
+        await session.commit()
+    except SQLAlchemyError as exc:
+        await session.rollback()
+        logger.exception("Failed to seed catalog types")
+        raise DatabaseOperationError("Failed to seed catalog types") from exc
+    logger.info("Catalog types ensured")
 
 async def seed_catalog_items(session: AsyncSession):
+    logger.debug("Seeding catalog items")
     items_to_add = [
         CatalogItem(catalog_type_id=2, catalog_brand_id=2, description=".NET Bot Black Sweatshirt", name=".NET Bot Black Sweatshirt", price=19.5, picture_uri="http://catalogbaseurltobereplaced/images/products/1.png"),
         CatalogItem(catalog_type_id=1, catalog_brand_id=2, description=".NET Black & White Mug", name=".NET Black & White Mug", price=8.50, picture_uri="http://catalogbaseurltobereplaced/images/products/2.png"),
@@ -49,14 +71,23 @@ async def seed_catalog_items(session: AsyncSession):
         CatalogItem(catalog_type_id=2, catalog_brand_id=5, description="Prism White TShirt", name="Prism White TShirt", price=12, picture_uri="http://catalogbaseurltobereplaced/images/products/12.png")
     ]
     
-    for item in items_to_add:
-        result = await session.execute(select(CatalogItem).where(CatalogItem.name == item.name))
-        if not result.scalars().first():
-            session.add(item)
-    
-    await session.commit()
+    try:
+        for item in items_to_add:
+            result = await session.execute(select(CatalogItem).where(CatalogItem.name == item.name))
+            if not result.scalars().first():
+                session.add(item)
+
+        await session.commit()
+    except SQLAlchemyError as exc:
+        await session.rollback()
+        logger.exception("Failed to seed catalog items")
+        raise DatabaseOperationError("Failed to seed catalog items") from exc
+    logger.info("Catalog items ensured")
+
 
 async def seed_db(session: AsyncSession):
+    logger.info("Running catalog seed")
     await seed_catalog_brands(session)
     await seed_catalog_types(session)
     await seed_catalog_items(session)
+    logger.info("Catalog seed complete")

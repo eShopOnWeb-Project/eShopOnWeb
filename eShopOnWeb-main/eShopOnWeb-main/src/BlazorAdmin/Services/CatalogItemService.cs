@@ -34,17 +34,26 @@ public class CatalogItemService : ICatalogItemService
 
     public async Task<CatalogItem> Create(CreateCatalogItemRequest catalogItem)
     {
-        return await _httpService.HttpPost<CatalogItemDTO>("items", catalogItem.AsDTO).ToCatalogItemAsync(_uriComposer);
+        _logger.LogInformation("Creating catalog item {ItemName}.", catalogItem.Name);
+        var result = await _httpService.HttpPost<CatalogItemDTO>("items", catalogItem.AsDTO).ToCatalogItemAsync(_uriComposer);
+        _logger.LogInformation("Catalog item {ItemId} created.", result.Id);
+        return result;
     }
 
     public async Task<CatalogItem> Edit(CatalogItem catalogItem)
     {
-        return (await _httpService.HttpPut<CatalogItemDTO>("items", catalogItem.AsDTO).ToCatalogItemAsync(_uriComposer));
+        _logger.LogInformation("Updating catalog item {ItemId}.", catalogItem.Id);
+        var result = await _httpService.HttpPut<CatalogItemDTO>("items", catalogItem.AsDTO).ToCatalogItemAsync(_uriComposer);
+        _logger.LogInformation("Catalog item {ItemId} updated.", result.Id);
+        return result;
     }
 
     public async Task<string> Delete(int catalogItemId)
     {
-        return (await _httpService.HttpDelete<DeleteCatalogItemResponse>("items", catalogItemId)).Status;
+        _logger.LogInformation("Deleting catalog item {ItemId}.", catalogItemId);
+        var status = (await _httpService.HttpDelete<DeleteCatalogItemResponse>("items", catalogItemId)).Status;
+        _logger.LogInformation("Catalog item {ItemId} delete status: {Status}.", catalogItemId, status);
+        return status;
     }
 
     public async Task<CatalogItem> GetById(int id)

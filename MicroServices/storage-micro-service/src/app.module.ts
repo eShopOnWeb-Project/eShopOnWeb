@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CatalogItemStockModule } from './stock/catalog-item-stock.module';
 
-
 @Module({
   imports: [
     TypeOrmModule.forRoot({
@@ -13,7 +12,7 @@ import { CatalogItemStockModule } from './stock/catalog-item-stock.module';
       password: process.env.DATABASE_PASSWORD || 'postgres',
       database: process.env.DATABASE_NAME || 'storagedb',
       autoLoadEntities: true,
-      synchronize: true, // only for development
+      synchronize: true,
     }),
     CatalogItemStockModule,
   ],

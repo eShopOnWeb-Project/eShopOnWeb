@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.eShopWeb.Infrastructure.Caching;
 using Microsoft.eShopWeb.Infrastructure.RabbitMQ.DTO;
 using Microsoft.eShopWeb.Infrastructure.RabbitMQ.Interfaces;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -14,7 +15,7 @@ public class StockCacheTests
 
     public StockCacheTests()
     {
-        _stockCache = new StockCache(_rabbitMqService);
+        _stockCache = new StockCache(_rabbitMqService, NullLogger<StockCache>.Instance);
     }
 
     [Fact]

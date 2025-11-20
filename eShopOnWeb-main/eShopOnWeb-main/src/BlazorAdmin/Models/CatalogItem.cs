@@ -27,7 +27,7 @@ public class CatalogItem
     public int Reserved { get; set; }
 
     // decimal(18,2)
-    [RegularExpression(@"^\d+([.,]\d{1,2})?$", ErrorMessage = "Feltet Pris skal være et positivt tal med maksimum to decimaler.")]
+    [RegularExpression(@"^\d+([.,]\d{1,2})?$", ErrorMessage = "The Price field must be a positive number with up to two decimals.")]
     [Range(0.01, 1000)]
     [DataType(DataType.Currency)]
     public decimal Price { get; set; }

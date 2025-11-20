@@ -1,5 +1,7 @@
+from typing import Optional
+
 from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+
 from app.models.catalog_type import CatalogType
 
 class CatalogTypeDTO(BaseModel):

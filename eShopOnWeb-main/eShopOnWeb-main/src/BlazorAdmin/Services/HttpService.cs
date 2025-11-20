@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using BlazorAdmin.Extensions;
 using BlazorShared;
 using BlazorShared.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace BlazorAdmin.Services;
@@ -16,14 +17,16 @@ public class HttpService
     private readonly ToastService _toastService;
     private readonly string _catalogApi;
     private readonly GatewayTokenService _tokenService;
+    private readonly ILogger<HttpService> _logger;
 
 
-    public HttpService(HttpClient httpClient, IOptions<BaseUrlConfiguration> baseUrlConfiguration, ToastService toastService, GatewayTokenService tokenService)
+    public HttpService(HttpClient httpClient, IOptions<BaseUrlConfiguration> baseUrlConfiguration, ToastService toastService, GatewayTokenService tokenService, ILogger<HttpService> logger)
     {
         _httpClient = httpClient;
         _toastService = toastService;
         _catalogApi = baseUrlConfiguration.Value.CatalogMicroservice;
         _tokenService = tokenService;
+        _logger = logger;
 
     }
 
@@ -88,6 +91,7 @@ public class HttpService
         var token = await _tokenService.GetTokenAsync();
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
+        _logger.LogInformation("Sending {Method} request to {Url}.", request.Method, request.RequestUri);
         var response = await _httpClient.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
@@ -100,18 +104,26 @@ public class HttpService
                     PropertyNameCaseInsensitive = true
                 });
                 if (error != null)
+                {
+                    _logger.LogWarning("Request to {Url} failed with message {Message}.", request.RequestUri, error.Message);
                     _toastService.ShowToast($"Error: {error.Message}", ToastLevel.Error);
+                }
                 else
+                {
+                    _logger.LogWarning("Request to {Url} failed with status {StatusCode}.", request.RequestUri, response.StatusCode);
                     _toastService.ShowToast($"Error: {response.StatusCode}", ToastLevel.Error);
+                }
             }
             catch
             {
+                _logger.LogWarning("Request to {Url} failed with status {StatusCode}. Unable to parse response body.", request.RequestUri, response.StatusCode);
                 _toastService.ShowToast($"Error: {response.StatusCode}", ToastLevel.Error);
             }
 
             return null;
         }
 
+        _logger.LogInformation("Request to {Url} completed with status {StatusCode}.", request.RequestUri, response.StatusCode);
         return response;
     }
 }
