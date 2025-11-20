@@ -1,115 +1,318 @@
 import { CatalogItemStockService } from '../stock/catalog-item-stock.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import { DataSource } from 'typeorm';
-import { Reservation } from '../stock/entities/reservation.entity';
-import { CatalogItemStock } from '../stock/entities/catalog-item-stock.entity';
+import { DataSource, EntityManager } from 'typeorm';
 import { DefaultDTOItem } from '../stock/dto/default-dto-item.interface';
+import { CatalogItemStock } from '../stock/entities/catalog-item-stock.entity';
+import { Reservation } from '../stock/entities/reservation.entity';
 
 describe('CatalogItemStockService', () => {
   let service: CatalogItemStockService;
-  let mockManager: any;
-  let mockAmqp: any;
+  let mockAmqp: jest.Mocked<AmqpConnection>;
+  let mockDataSource: jest.Mocked<DataSource>;
+  let mockManager: jest.Mocked<EntityManager>;
 
   beforeEach(() => {
+    mockAmqp = {
+      publish: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
     mockManager = {
       findOne: jest.fn(),
       find: jest.fn(),
-      save: jest.fn(),
-    };
+      create: jest.fn(),
+      save: jest.fn().mockImplementation(async (entity) => entity),
+    } as any;
 
-    mockAmqp = {
-      publish: jest.fn(),
-    };
+    mockDataSource = {
+      getRepository: jest.fn().mockReturnValue({
+        find: jest.fn().mockResolvedValue([
+          { itemId: 1, total: 10, reserved: 2 },
+          { itemId: 2, total: 5, reserved: 1 },
+        ]),
+      }),
+      manager: mockManager,
+      transaction: jest.fn().mockImplementation(async (cb) => {
+        return cb(mockManager);
+      }),
+    } as any;
 
-    service = new CatalogItemStockService(mockAmqp, mockManager as unknown as DataSource);
+    service = new CatalogItemStockService(mockAmqp, mockDataSource);
   });
 
-  it('should reserve stock successfully and publish event', async () => {
-    const mockStocks = [{ itemId: 1, total: 100, reserved: 20 }];
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 10, basketId: 101 }];
+  it('should return all stock items', async () => {
+    const stocks = await service.getFullStock();
+    expect(stocks).toEqual([
+      { itemId: 1, total: 10, reserved: 2 },
+      { itemId: 2, total: 5, reserved: 1 },
+    ]);
+    expect(mockDataSource.getRepository).toHaveBeenCalled();
+  });
 
-    // Mock the necessary methods
-    mockManager.findOne.mockResolvedValue(null);  // No existing reservation
-    mockManager.save.mockResolvedValue(undefined); // Simulate save
+  it('should publish event after successful restock', async () => {
+    const items: DefaultDTOItem[] = [
+      { itemId: 1, amount: 3, basketId: 1 },
+      { itemId: 2, amount: 4, basketId: 1 },
+    ];
+    const stock1 = { id: 1, itemId: 1, total: 10, reserved: 0 };
+    const stock2 = { id: 2, itemId: 2, total: 20, reserved: 0 };
+    // Mock findOne to return current stock for each item
+    mockManager.findOne
+      .mockResolvedValueOnce(stock1)
+      .mockResolvedValueOnce(stock2);
+    mockManager.create.mockImplementation((entity, data) => data ?? ({} as any));
 
-    await service.reserveAtomic(mockItems);
+    const updatedStock: DefaultDTOItem[] = [
+      { itemId: 1, amount: 13, basketId: 1 },
+      { itemId: 2, amount: 24, basketId: 1 },
+    ];
 
-    // Validate that the save method was called
-    expect(mockManager.save).toHaveBeenCalledTimes(2);  // Adjust according to the number of calls
+    await service.restockAtomic(items);
+
+    expect(mockManager.save).toHaveBeenCalledTimes(2);
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
-      'catalog_item_stock.reserve.success',
-      expect.arrayContaining([{ itemId: 1, amount: 10, basketId: 101 }])
+      'catalog_item_stock.restock.success',
+      updatedStock
     );
   });
 
-  it('should confirm stock reservation successfully', async () => {
-    const mockStocks = [{ itemId: 1, total: 100, reserved: 20 }];
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 5, basketId: 101 }];
+  it('should throw error if not enough stock to reserve', async () => {
+    const items = [{ itemId: 99, amount: 50, basketId: 1 }];
+    const stock = { id: 1, itemId: 99, total: 10, reserved: 5 };
+    mockManager.findOne
+      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
+      .mockResolvedValueOnce(null); // No existing reservation
+    mockManager.create.mockImplementation((entity, data) => data ?? ({} as any));
 
-    mockManager.find.mockResolvedValue(mockStocks); // Find stock
-    mockManager.findOne.mockResolvedValue({ id: 1, itemId: 1, basketId: 101, amount: 5, status: 'reserved', expiresAt: new Date() });
-
-    await service.confirmAtomic(mockItems);
-
-    expect(mockManager.save).toHaveBeenCalledTimes(2);  // Adjust according to the number of save calls
+    await expect(service.reserveAtomic(items)).rejects.toThrow('Not enough stock');
   });
 
-  it('should throw error if not enough reserved stock', async () => {
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 10, basketId: 101 }];
-    const mockStocks = [{ itemId: 1, total: 100, reserved: 5 }];
+  it('should reserve stock successfully when no existing reservation and publish event', async () => {
+    const items = [
+      { itemId: 1, amount: 5, basketId: 1 },
+      { itemId: 2, amount: 2, basketId: 1 },
+    ];
+    const stock1 = { id: 1, itemId: 1, total: 10, reserved: 2 };
+    const stock2 = { id: 2, itemId: 2, total: 5, reserved: 1 };
+    
+    // withLockedItems sorts items by itemId, so it will look up itemId 1 first, then itemId 2
+    // Then in reserveAtomic, it loops through items in original order but uses stocks[i] which is sorted
+    // Since items are already sorted by itemId, stocks[0] corresponds to items[0] (itemId 1)
+    mockManager.findOne.mockImplementation((entity, options: any) => {
+      if (entity === CatalogItemStock) {
+        const itemId = options?.where?.itemId;
+        if (itemId === 1) return Promise.resolve(stock1);
+        if (itemId === 2) return Promise.resolve(stock2);
+      }
+      if (entity === Reservation) {
+        // No existing reservations
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(null);
+    });
 
-    mockManager.find.mockResolvedValue(mockStocks);
+    // Mock create to return a reservation object with the data passed to it
+    mockManager.create.mockImplementation((entity, data) => {
+      return data as any;
+    });
 
-    await expect(service.confirmAtomic(mockItems)).rejects.toThrow('Not enough reserved stock');
+    await service.reserveAtomic(items);
+
+    expect(mockManager.save).toHaveBeenCalledTimes(4); // 2 reservations + 2 stocks
+    expect(stock1.reserved).toBe(7); // 2 + 5 = 7
+    expect(stock2.reserved).toBe(3); // 1 + 2 = 3
+    
+    const expectedResults: DefaultDTOItem[] = [
+      { itemId: 1, amount: 7, basketId: 1 }, // stock.reserved after update
+      { itemId: 2, amount: 3, basketId: 1 }, // stock.reserved after update
+    ];
+
+    expect(mockAmqp.publish).toHaveBeenCalledWith(
+      'catalog_item_stock.exchange',
+      'catalog_item_stock.reserve.success',
+      expectedResults
+    );
+  });
+
+  it('should update existing reservation when amount increases', async () => {
+    const items = [{ itemId: 1, amount: 7, basketId: 1 }];
+    const stock = { id: 1, itemId: 1, total: 10, reserved: 2 };
+    const existingReservation = { id: 1, itemId: 1, basketId: 1, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+    
+    mockManager.findOne
+      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
+      .mockResolvedValueOnce(existingReservation); // Existing reservation
+
+    await service.reserveAtomic(items);
+
+    expect(mockManager.save).toHaveBeenCalledTimes(2); // reservation + stock
+    expect(existingReservation.amount).toBe(7);
+    expect(stock.reserved).toBe(4); // 2 + (7-5) = 4
+  });
+
+  it('should update existing reservation when amount decreases', async () => {
+    const items = [{ itemId: 1, amount: 3, basketId: 1 }];
+    const stock = { id: 1, itemId: 1, total: 10, reserved: 7 };
+    const existingReservation = { id: 1, itemId: 1, basketId: 1, amount: 5, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+    
+    mockManager.findOne
+      .mockResolvedValueOnce(stock) // CatalogItemStock lookup
+      .mockResolvedValueOnce(existingReservation); // Existing reservation
+
+    await service.reserveAtomic(items);
+
+    expect(mockManager.save).toHaveBeenCalledTimes(2); // reservation + stock
+    expect(existingReservation.amount).toBe(3);
+    expect(stock.reserved).toBe(5); // 7 - (5-3) = 5
+  });
+
+  it('should confirm stock reservation and publish event', async () => {
+    const items = [
+      { itemId: 1, amount: 3, basketId: 1 },
+      { itemId: 2, amount: 1, basketId: 1 },
+    ];
+    const stock1 = { id: 1, itemId: 1, total: 10, reserved: 5 };
+    const stock2 = { id: 2, itemId: 2, total: 5, reserved: 2 };
+    
+    mockManager.findOne
+      .mockResolvedValueOnce(stock1) // CatalogItemStock lookup for item 1
+      .mockResolvedValueOnce(stock2); // CatalogItemStock lookup for item 2
+
+    const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 3, status: 'reserved', expiresAt: new Date() };
+    const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 1, status: 'reserved', expiresAt: new Date() };
+    
+    mockManager.find
+      .mockResolvedValueOnce([reservation1]) // Reservations for item 1
+      .mockResolvedValueOnce([reservation2]); // Reservations for item 2
+
+    await service.confirmAtomic(items);
+
+    expect(mockManager.save).toHaveBeenCalled();
+    expect(reservation1.status).toBe('confirmed');
+    expect(reservation2.status).toBe('confirmed');
+    expect(stock1.reserved).toBe(2); // 5 - 3 = 2
+    expect(stock1.total).toBe(7); // 10 - 3 = 7
+    expect(stock2.reserved).toBe(1); // 2 - 1 = 1
+    expect(stock2.total).toBe(4); // 5 - 1 = 4
+    expect(mockAmqp.publish).toHaveBeenCalledWith(
+      'catalog_item_stock.exchange',
+      'catalog_item_stock.confirm.success',
+      items
+    );
+  });
+
+  it('should throw error if trying to confirm more than reserved', async () => {
+    const items = [{ itemId: 1, amount: 10, basketId: 1 }];
+    const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
+    
+    mockManager.findOne.mockResolvedValueOnce(stock);
+    mockManager.find.mockResolvedValueOnce([]); // No reservations
+
+    await expect(service.confirmAtomic(items)).rejects.toThrow('Not enough reserved stock');
   });
 
   it('should cancel reservation and publish event', async () => {
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 5, basketId: 101 }];
-    const mockStocks = [{ itemId: 1, total: 100, reserved: 20 }];
+    const items = [
+      { itemId: 1, amount: 2, basketId: 1 },
+      { itemId: 2, amount: 1, basketId: 1 },
+    ];
+    const stock1 = { id: 1, itemId: 1, total: 10, reserved: 5 };
+    const stock2 = { id: 2, itemId: 2, total: 5, reserved: 2 };
+    
+    mockManager.findOne
+      .mockResolvedValueOnce(stock1) // CatalogItemStock lookup for item 1
+      .mockResolvedValueOnce(stock2); // CatalogItemStock lookup for item 2
 
-    mockManager.find.mockResolvedValue(mockStocks); // Find stock
-    mockManager.findOne.mockResolvedValue({ id: 1, itemId: 1, basketId: 101, amount: 5, status: 'reserved', expiresAt: new Date() });
+    const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 2, status: 'reserved', expiresAt: new Date() };
+    const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 1, status: 'reserved', expiresAt: new Date() };
+    
+    mockManager.find
+      .mockResolvedValueOnce([reservation1]) // Reservations for item 1
+      .mockResolvedValueOnce([reservation2]); // Reservations for item 2
 
-    await service.cancelAtomic(mockItems);
+    await service.cancelAtomic(items);
 
-    expect(mockManager.save).toHaveBeenCalledTimes(2);  // Adjust according to the number of save calls
+    expect(mockManager.save).toHaveBeenCalled();
+    expect(reservation1.status).toBe('cancelled');
+    expect(reservation2.status).toBe('cancelled');
+    expect(stock1.reserved).toBe(3); // 5 - 2 = 3
+    expect(stock2.reserved).toBe(1); // 2 - 1 = 1
     expect(mockAmqp.publish).toHaveBeenCalledWith(
       'catalog_item_stock.exchange',
       'catalog_item_stock.cancel.success',
-      expect.arrayContaining([{ itemId: 1, amount: 5, basketId: 101 }])
+      items
     );
   });
 
   it('should throw error if trying to cancel more than reserved', async () => {
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 30, basketId: 101 }];
-    const mockStocks = [{ itemId: 1, total: 100, reserved: 20 }];
+    const items = [{ itemId: 1, amount: 10, basketId: 1 }];
+    const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
+    
+    mockManager.findOne.mockResolvedValueOnce(stock);
+    mockManager.find.mockResolvedValueOnce([]); // No reservations found
 
-    mockManager.find.mockResolvedValue(mockStocks);
-
-    await expect(service.cancelAtomic(mockItems)).rejects.toThrow('Not enough reserved items to cancel');
+    await expect(service.cancelAtomic(items)).rejects.toThrow(/Cannot cancel more than reserved|No active reservation found/);
   });
 
-  it('should check active reservations and return missing items', async () => {
-    const mockItems: DefaultDTOItem[] = [{ itemId: 1, amount: 5, basketId: 101 }];
-    const mockReservations = [
-      { itemId: 1, basketId: 101, amount: 5, status: 'reserved', expiresAt: new Date() },
-    ];
+  it('should throw error if no active reservation found', async () => {
+    const items = [{ itemId: 1, amount: 5, basketId: 1 }];
+    const stock = { id: 1, itemId: 1, total: 10, reserved: 5 };
+    
+    mockManager.findOne.mockResolvedValueOnce(stock);
+    mockManager.find.mockResolvedValueOnce([]); // No reservations found
 
-    mockManager.find.mockResolvedValue(mockReservations);
-
-    const result = await service.checkActiveReservations(mockItems);
-
-    expect(result.success).toBe(true);
-    expect(result.missingItems).toHaveLength(0);
+    await expect(service.cancelAtomic(items)).rejects.toThrow('No active reservation found');
   });
 
-  it('should throw error if items have different basketIds', async () => {
-    const mockItems: DefaultDTOItem[] = [
-      { itemId: 1, amount: 5, basketId: 101 },
-      { itemId: 2, amount: 3, basketId: 102 }, // Different basketId
-    ];
+  describe('checkActiveReservations', () => {
+    it('should return success when all reservations are active', async () => {
+      const items = [
+        { itemId: 1, amount: 3, basketId: 1 },
+        { itemId: 2, amount: 2, basketId: 1 },
+      ];
+      
+      const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 3, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+      const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 2, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+      
+      mockManager.find.mockResolvedValueOnce([reservation1, reservation2]);
 
-    await expect(service.checkActiveReservations(mockItems)).rejects.toThrow('All items must have the same basketId');
+      const result = await service.checkActiveReservations(items);
+
+      expect(result.success).toBe(true);
+      expect(result.missingItems).toEqual([]);
+    });
+
+    it('should return missing items when reservations are insufficient', async () => {
+      const items = [
+        { itemId: 1, amount: 5, basketId: 1 },
+        { itemId: 2, amount: 2, basketId: 1 },
+      ];
+      
+      const reservation1 = { id: 1, itemId: 1, basketId: 1, amount: 3, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+      const reservation2 = { id: 2, itemId: 2, basketId: 1, amount: 2, status: 'reserved', expiresAt: new Date(Date.now() + 60000) };
+      
+      mockManager.find.mockResolvedValueOnce([reservation1, reservation2]);
+
+      const result = await service.checkActiveReservations(items);
+
+      expect(result.success).toBe(false);
+      expect(result.missingItems).toEqual([1]); // Item 1 has only 3 reserved but needs 5
+    });
+
+    it('should return success for empty items array', async () => {
+      const result = await service.checkActiveReservations([]);
+
+      expect(result.success).toBe(true);
+      expect(result.missingItems).toEqual([]);
+    });
+
+    it('should throw error if items have different basketIds', async () => {
+      const items = [
+        { itemId: 1, amount: 3, basketId: 1 },
+        { itemId: 2, amount: 2, basketId: 2 },
+      ];
+
+      await expect(service.checkActiveReservations(items)).rejects.toThrow('All items must have the same basketId');
+    });
   });
 });
